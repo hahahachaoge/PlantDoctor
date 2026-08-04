@@ -18,7 +18,7 @@ import time
 from tqdm import tqdm
 import copy
 
-# 强制使用GPU
+
 print("[设备] 强制使用GPU训练")
 
 
