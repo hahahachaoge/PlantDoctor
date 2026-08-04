@@ -19,9 +19,6 @@ from tqdm import tqdm
 import copy
 
 
-print("[设备] 强制使用GPU训练")
-
-
 class ConservativeLoss(nn.Module):
     """
     保守训练策略
