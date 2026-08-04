@@ -143,7 +143,7 @@ if __name__ == '__main__':
         model = models.convnext_base(weights=None)
         need_load_pretrained = False
     else:
-        # 尝试加载预训练模型
+
         try:
             model = models.convnext_base(weights='IMAGENET1K_V1')
             print("  成功加载ImageNet预训练权重")
