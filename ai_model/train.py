@@ -69,7 +69,6 @@ if __name__ == '__main__':
 
     # ============ 断点续训配置 ============
     # 手动指定检查点路径（Kaggle每次重启会清空/kaggle/working/，需手动上传检查点）
-    # 示例: '/kaggle/input/your-checkpoint/checkpoint_epoch_3.pth'
     MANUAL_RESUME_CKPT = '/kaggle/input/datasets/scnuzm/trazi60/checkpoint_epoch_60.pth'  # 在这里填写上传的检查点文件路径
 
     # 自动检测最新检查点（支持断点续训）
