@@ -116,33 +116,33 @@
 100. Insect_yellow_rice_borer                           (训练:   403, 验证:  101, 总计:   504)
 
 ================================================================================
-二、作物病害类别 (81 类)
+二、作物病害类别 (81 类)    无标注的只有叶子
 ================================================================================
 
 
 【Apple】
-  1. Apple_Healthy                                      (训练:  3644, 验证:  911, 总计:  4555)
+  1. Apple_Healthy                                     (训练:  3644, 验证:  911, 总计:  4555)
   2. Apple_Mosaic_Virus                                 (训练:   129, 验证:   33, 总计:   162)
   3. Apple_Rot                                          (训练:   496, 验证:  124, 总计:   620)
-  4. Apple_Rotten                                       (训练:  2340, 验证:  585, 总计:  2925)
+  4. Apple_Rotten             只有果实                           (训练:  2340, 验证:  585, 总计:  2925)
   5. Apple_Rust                                         (训练:   764, 验证:  192, 总计:   956)
   6. Apple_Scab                                         (训练:   660, 验证:  166, 总计:   826)
   7. Apple_Spot                                         (训练:  1410, 验证:  353, 总计:  1763)
 
 【Banana】
-  8. Banana_Healthy                                     (训练:  1599, 验证:  400, 总计:  1999)
-  9. Banana_Rotten                                      (训练:  2237, 验证:  560, 总计:  2797)
+  8. Banana_Healthy               只有果实                       (训练:  1599, 验证:  400, 总计:  1999)
+  9. Banana_Rotten                只有果实                       (训练:  2237, 验证:  560, 总计:  2797)
 
 【Bellpepper】
- 10. Bellpepper_Healthy                                 (训练:   488, 验证:  123, 总计:   611)
- 11. Bellpepper_Rotten                                  (训练:   472, 验证:  119, 总计:   591)
+ 10. Bellpepper_Healthy            只有果实                      (训练:   488, 验证:  123, 总计:   611)
+ 11. Bellpepper_Rotten              只有果实                     (训练:   472, 验证:  119, 总计:   591)
 
 【Blueberry】
  12. Blueberry_Healthy                                  (训练:  1201, 验证:  301, 总计:  1502)
 
 【Carrot】
- 13. Carrot_Healthy                                     (训练:   495, 验证:  124, 总计:   619)
- 14. Carrot_Rotten                                      (训练:   463, 验证:  116, 总计:   579)
+ 13. Carrot_Healthy                 只有果实                     (训练:   495, 验证:  124, 总计:   619)
+ 14. Carrot_Rotten                  只有果实                     (训练:   463, 验证:  116, 总计:   579)
 
 【Cassava】
  15. Cassava_Bacterial_Blight                           (训练:   869, 验证:  218, 总计:  1087)
@@ -169,24 +169,24 @@
  30. Corn_Spot                                          (训练:  1176, 验证:  295, 总计:  1471)
 
 【Cucumber】
- 31. Cucumber_Healthy                                   (训练:   486, 验证:  122, 总计:   608)
- 32. Cucumber_Rotten                                    (训练:   474, 验证:  119, 总计:   593)
+ 31. Cucumber_Healthy               只有果实                     (训练:   486, 验证:  122, 总计:   608)
+ 32. Cucumber_Rotten                只有果实                     (训练:   474, 验证:  119, 总计:   593)
 
 【Grape】
  33. Grape_Black_Measles                                (训练:  1142, 验证:  286, 总计:  1428)
  34. Grape_Blight                                       (训练:   841, 验证:  211, 总计:  1052)
  35. Grape_Healthy                                      (训练:   831, 验证:  208, 总计:  1039)
  36. Grape_Rot                                          (训练:  1489, 验证:  373, 总计:  1862)
- 37. Grape_Rotten                                       (训练:   160, 验证:   40, 总计:   200)
+ 37. Grape_Rotten                      只有果实                  (训练:   160, 验证:   40, 总计:   200)
  38. Grape_Spot                                         (训练:  1719, 验证:  430, 总计:  2149)
 
 【Guava】
- 39. Guava_Healthy                                      (训练:   160, 验证:   40, 总计:   200)
- 40. Guava_Rotten                                       (训练:   160, 验证:   40, 总计:   200)
+ 39. Guava_Healthy                       只有果实                (训练:   160, 验证:   40, 总计:   200)
+ 40. Guava_Rotten                        只有果实               (训练:   160, 验证:   40, 总计:   200)
 
 【Jujube】
- 41. Jujube_Healthy                                     (训练:   160, 验证:   40, 总计:   200)
- 42. Jujube_Rotten                                      (训练:   160, 验证:   40, 总计:   200)
+ 41. Jujube_Healthy                只有果实                      (训练:   160, 验证:   40, 总计:   200)
+ 42. Jujube_Rotten                 只有果实                      (训练:   160, 验证:   40, 总计:   200)
 
 【Mango】
  43. Mango_Anthracnose                                  (训练:   400, 验证:  100, 总计:   500)
@@ -196,12 +196,12 @@
  47. Mango_Gall_Midge                                   (训练:   400, 验证:  100, 总计:   500)
  48. Mango_Healthy                                      (训练:  1850, 验证:  463, 总计:  2313)
  49. Mango_Powdery_Mildew                               (训练:   400, 验证:  100, 总计:   500)
- 50. Mango_Rotten                                       (训练:  1797, 验证:  450, 总计:  2247)
+ 50. Mango_Rotten                   只有果实                     (训练:  1797, 验证:  450, 总计:  2247)
  51. Mango_Sooty_Mould                                  (训练:   400, 验证:  100, 总计:   500)
 
 【Orange】
- 52. Orange_Healthy                                     (训练:  1660, 验证:  415, 总计:  2075)
- 53. Orange_Rotten                                      (训练:  1748, 验证:  438, 总计:  2186)
+ 52. Orange_Healthy                只有果实                      (训练:  1660, 验证:  415, 总计:  2075)
+ 53. Orange_Rotten                 只有果实                      (训练:  1748, 验证:  438, 总计:  2186)
 
 【Peach】
  54. Peach_Healthy                                      (训练:  1067, 验证:  267, 总计:  1334)
@@ -212,13 +212,13 @@
  57. Pepper_Spot                                        (训练:  2432, 验证:  608, 总计:  3040)
 
 【Pomegranate】
- 58. Pomegranate_Healthy                                (训练:   160, 验证:   40, 总计:   200)
- 59. Pomegranate_Rotten                                 (训练:   160, 验证:   40, 总计:   200)
+ 58. Pomegranate_Healthy            只有果实                     (训练:   160, 验证:   40, 总计:   200)
+ 59. Pomegranate_Rotten             只有果实                     (训练:   160, 验证:   40, 总计:   200)
 
 【Potato】
  60. Potato_Blight                                      (训练:  3942, 验证:  986, 总计:  4928)
  61. Potato_Healthy                                     (训练:   797, 验证:  200, 总计:   997)
- 62. Potato_Rotten                                      (训练:   467, 验证:  117, 总计:   584)
+ 62. Potato_Rotten                 只有果实                      (训练:   467, 验证:  117, 总计:   584)
 
 【Raspberry】
  63. Raspberry_Healthy                                  (训练:   296, 验证:   75, 总计:   371)
@@ -234,7 +234,7 @@
  67. Strawberry_Leaf_Scorch                             (训练:  1984, 验证:  497, 总计:  2481)
  68. Strawberry_Mold                                    (训练:   221, 验证:   56, 总计:   277)
  69. Strawberry_Powdery_Mildew                          (训练:   524, 验证:  132, 总计:   656)
- 70. Strawberry_Rotten                                  (训练:  1276, 验证:  320, 总计:  1596)
+ 70. Strawberry_Rotten              只有果实                     (训练:  1276, 验证:  320, 总计:  1596)
  71. Strawberry_Spot                                    (训练:   404, 验证:  102, 总计:   506)
 
 【Tomato】
@@ -244,7 +244,7 @@
  75. Tomato_Mold                                        (训练:  1272, 验证:  319, 总计:  1591)
  76. Tomato_Mosaic_Virus                                (训练:   412, 验证:  103, 总计:   515)
  77. Tomato_Powdery_Mildew                              (训练:   384, 验证:   97, 总计:   481)
- 78. Tomato_Rotten                                      (训练:   476, 验证:  119, 总计:   595)
+ 78. Tomato_Rotten                    只有果实                   (训练:   476, 验证:  119, 总计:   595)
  79. Tomato_Septoria                                    (训练:  2642, 验证:  661, 总计:  3303)
  80. Tomato_Spot                                        (训练:  6314, 验证: 1579, 总计:  7893)
  81. Tomato_Target_Spot                                 (训练:  3352, 验证:  838, 总计:  4190)
