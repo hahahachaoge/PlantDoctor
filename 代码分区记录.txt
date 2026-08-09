@@ -1,0 +1,158 @@
+config.py
+
+存放所有常量和静态数据，不包含任何逻辑。
+
+API地址、主题色、数据库路径、图片路径
+
+商品种子数据、病虫害词条、社区帖子、提醒文本
+
+get_api_base_url() 支持从 api_url.txt 文件覆盖默认API地址
+
+utils.py
+
+存放工具函数和基础类，被其他模块共用。
+
+register_chinese_font() 注册中文字体
+
+text_style() 返回字体配置字典
+
+show_toast() 显示短暂提示弹窗
+
+open_text_popup() 显示文字弹窗
+
+normalize_comment_text() 清洗评论文本
+
+save_avatar_image() 裁剪保存头像
+
+is_android() 判断是否Android平台
+
+BaseScreen 带背景图的基础Screen类
+
+database/user_db.py
+
+管理用户数据的所有数据库操作。
+
+用户注册、登录验证、查询
+
+头像、昵称、签名更新
+
+每日识别次数控制（免费用户每天3次）
+
+database/store_db.py
+
+管理商城、社区、病虫害的所有数据库操作。
+
+商品查询、搜索、收藏、购买
+
+订单创建和查询
+
+社区帖子点赞、浏览、评论
+
+病虫害词条查询
+
+版本控制，数据库版本变更时自动重刷种子数据
+
+widgets/base_widgets.py
+
+存放通用UI组件。
+
+组件	作用
+IconButton	可点击的图标Label
+UnderlineLabel	带下划线可点击的Label
+RoundedButton	圆角按钮，自定义颜色
+GrayPlaceholder	灰色占位图
+CircleImage	圆形裁剪图片
+LikeImageButton	点赞按钮，有两种状态
+IconStat	图标+标题+数值的统计组件
+ToolCard	首页工具卡片
+HomeStoreItem	商城首页商品卡片
+PestListRow	病虫害列表行
+widgets/product_widgets.py
+
+存放商品列表相关组件。
+
+ProductRow 商品列表行，支持RecycleView
+
+StoreRecycleView 商品滚动列表，用BoxLayout模拟RecycleView
+
+screens/auth.py
+
+登录和注册页面。
+
+LoginScreen 用户名密码登录
+
+RegisterScreen 注册账号，支持选头像、选角色（免费/VIP）
+
+screens/home.py
+
+首页页面。
+
+天气卡片、今日提醒
+
+常用工具网格（专家服务、农事计划、虫害百科等）
+
+搜索病虫害
+
+底部导航栏（所有页面共用这个方法）
+
+screens/community.py
+
+社区相关页面。
+
+CommunityScreen 帖子列表、热门用户、种植经验入口、搜索帖子、点赞
+
+CommunityDetailScreen 帖子详情，支持评论、点赞、浏览计数
+
+screens/store.py
+
+商城相关页面。
+
+StoreScreen 商城首页，广告banner、分区展示、搜索商品
+
+StoreCategoryScreen 商品分类列表
+
+ProductDetailScreen 商品详情，支持收藏、购买、评论
+
+screens/mypage.py
+
+个人中心相关页面。
+
+MyPageScreen 个人信息、头像、昵称、签名、菜单
+
+FavoriteScreen 我的收藏列表（继承自StoreCategoryScreen）
+
+OrderScreen 我的订单列表
+
+OrderRow 订单行组件
+
+screens/encyclopedia.py
+
+虫害百科相关页面。
+
+EncyclopediaScreen 病虫害列表
+
+PestDetailScreen 病虫害详情，显示介绍和防治方法
+
+screens/misc.py
+
+专家和地图页面。
+
+ExpertScreen 专家服务，纯图片界面，点击左上角返回
+
+MapScreen 病虫害分布图，纯图片界面，点击左上角返回
+
+screens/camera.py
+
+拍照识别和结果页面。
+
+CameraScreen 调用摄像头，处理Android权限，拍照后发送到后端API识别
+
+ResultScreen 显示识别结果：病害名称、置信度、简介、防治方法
+
+main.py
+
+程序入口，只做两件事：
+
+build() 创建所有Screen，注册到ScreenManager
+
+MyApp 管理全局状态（当前用户、相机模式）和全局操作（识别图片、显示拍照菜单、跳转结果页）
