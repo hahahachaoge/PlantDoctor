@@ -1,0 +1,7 @@
+C:\Users\zhouminghao\AppData\Local\Programs\Python\Python311\Lib\site-packages\kivy\core\camera\camera_opencv.py
+此文件被修改过
+
+
+普通测试账户：zmh  密码123
+
+VIP测试账户：zmh2  密码123
