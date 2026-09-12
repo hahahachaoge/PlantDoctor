@@ -39,12 +39,11 @@ class ConservativeLoss(nn.Module):
         # 基础损失
         base_loss = self.base_criterion(outputs, targets)
 
-        # 保守训练正则项：‖θ - θ₀‖²（平方 L2），跳过分类器层
+        # 保守训练正则项：约束参数变化（跳过分类器层）
         cons_loss = 0.0
         for name, param in model.named_parameters():
             if name in self.original_params and 'classifier' not in name:
-                diff = param - self.original_params[name].to(model.device)
-                cons_loss += torch.sum(diff ** 2)
+                cons_loss += torch.norm(param - self.original_params[name].to(model.device), 2)
 
         return base_loss + self.lambda_cons * cons_loss
 
@@ -94,19 +93,15 @@ if __name__ == '__main__':
         transforms.RandomCrop(224),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomVerticalFlip(p=0.3),
-        transforms.RandomRotation(45),                                    # ±45° 旋转，模拟手持角度
-        transforms.ColorJitter(brightness=0.4, contrast=0.4,             # 强亮度/对比度抖动，模拟户外强光/阴天
-                               saturation=0.3, hue=0.05),
-        transforms.RandomAdjustSharpness(sharpness_factor=1.5, p=0.3),   # 锐化，模拟不同手机镜头
-        transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),        # 高斯模糊，模拟手抖/对焦不准
+        transforms.RandomRotation(30),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        transforms.RandomErasing(p=0.15)
+        transforms.RandomErasing(p=0.2)
     ])
 
     val_transform = transforms.Compose([
-        transforms.Resize((256, 256)),
-        transforms.CenterCrop(224),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
