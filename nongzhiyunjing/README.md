@@ -1,6 +1,6 @@
-# 智农慧眼 Plant Doctor
+# 农智云警 Plant Doctor
 
-智农慧眼（Plant Doctor）是一款面向农户的**智慧农业病虫害识别 APP**：拍一张作物照片，就能得到病虫害名称、置信度、症状简介与防治建议，同时集成了农资商城、种植社区、虫害百科、农事提醒与天气等常用功能。
+农智云警（Plant Doctor）是一款面向农户的**智慧农业病虫害识别 APP**：拍一张作物照片，就能得到病虫害名称、置信度、症状简介与防治建议，同时集成了农资商城、种植社区、虫害百科、农事提醒与天气等常用功能。
 
 客户端使用 **Kivy 2.3.0** 开发，一套代码同时支持 Windows 桌面运行与 Android 打包；识别能力由本地局域网内的 **FastAPI + ConvNeXt** 服务提供，图片不出局域网，隐私与速度兼顾。
 
@@ -322,6 +322,7 @@ python train.py              # 训练并导出 pest_model.pth / classes.json
 4. **`api_url.txt` 会随运行写入**：内容为本机局域网 IP，提交代码时建议忽略，避免覆盖他人配置。
 5. **Kivy 相机补丁**：Windows 下 `kivy/core/camera/camera_opencv.py` 曾被手动修改（见 `附录.txt`），更换 Kivy 版本后需重新确认；`screens/camera.py` 中也已内置对 Kivy 2.3.0 `CameraOpenCV` 缺少 `fps` 属性的兼容处理。
 6. **模型与数据集较大**：`pest_model.pth` 与数据集不随 APK 分发，Android 端必须联网使用服务端识别。
+7. **仓库内存在项目名不一致的遗留**：正式名称为**农智云警**（见 `main.spec` 的 `name`、`screens/auth.py` 的欢迎文案、`ai_model/preprocess_data.py` 中的 `D:\农智云警\` 路径）。但 `dist/` 下已有构建产物目录名为 `农智慧眼`，`config.py` 中 `COMMUNITY_ARTICLES` 的官方账号 `username` 仍写作 `智农慧眼`。重新打包前建议统一命名，避免混淆。
 
 ---
 

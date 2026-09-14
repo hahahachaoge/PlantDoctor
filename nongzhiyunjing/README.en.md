@@ -1,6 +1,6 @@
-# Plant Doctor (智农慧眼)
+# Plant Doctor (农智云警)
 
-Plant Doctor (智农慧眼) is a **smart-agriculture pest & disease recognition app** for growers. Take a photo of a crop and get the pest/disease name, confidence, symptom description and treatment advice — together with an integrated agro-store, farming community, pest encyclopedia, farming reminders and weather.
+Plant Doctor (农智云警) is a **smart-agriculture pest & disease recognition app** for growers. Take a photo of a crop and get the pest/disease name, confidence, symptom description and treatment advice — together with an integrated agro-store, farming community, pest encyclopedia, farming reminders and weather.
 
 The client is built with **Kivy 2.3.0**, so the same codebase runs on Windows and can be packaged for Android. Recognition is powered by a **FastAPI + ConvNeXt** service running on the local network, so photos never leave your LAN.
 
