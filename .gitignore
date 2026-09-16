@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment (machine-specific, do not commit)
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Build artifacts (PyInstaller / Buildozer)
+build/
+dist/
+bin/
+*.spec.bak
+
+# Logs & runtime files
+*.log
+crash.log
+error.log
+api_url.txt
+smart_agri.db
+photos/*
+!photos/.keep
+
+# AI model weights & datasets (files exceed GitHub size limits, obtain separately)
+*.pth
+ai_model/data/
+ai_model/checkpoints/
+
+# Excluded by request
+ai_model/api.py
+ai_model/api.cpython-*.pyc*
+
+# Local scratch / personal notes
+.gitignore.txt
+api_url,.txt
+compile_out.txt
+0001.home_check
+python
+附录.txt
+开启方式.txt
+代码分区记录.txt
+
+# OS
+.DS_Store
+Thumbs.db
