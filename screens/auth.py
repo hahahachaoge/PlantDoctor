@@ -79,7 +79,7 @@ class LoginScreen(Screen):
         # LOGO区域
         self.avatar_wrap = FloatLayout(
             size_hint=(None, None), size=(dp(130), dp(130)),
-            pos_hint={"center_x": 0.5, "top": 0.84},
+            pos_hint={"center_x": 0.5, "top": 0.88},
         )
         default_avatar = os.path.join(IMAGE_DIR, "logo1.png")
         self.avatar_image = KivyImage(
@@ -105,7 +105,7 @@ class LoginScreen(Screen):
             font_size=sp(18), bold=True,
             color=(0.38, 0.48, 0.38, 1),
             size_hint=(0.9, None), height=dp(28),
-            pos_hint={"center_x": 0.5, "top": 0.70},
+            pos_hint={"center_x": 0.5, "top": 0.74},
             halign="center", valign="middle", **text_style(),
         )
         self.nick_label.bind(size=self.nick_label.setter("text_size"))
