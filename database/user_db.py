@@ -93,9 +93,9 @@ class UserDatabase:
                 INSERT INTO users (
                     username, password, role, avatar_path, recognize_count, last_recognize_date,
                     nick_name, signature, following_count, followers_count, share_count
-                ) VALUES (?, ?, ?, ?, 0, '', '开心菜园阿伯', '欢迎光临我的开心菜园！', 0, 0, 0)
+                ) VALUES (?, ?, ?, ?, 0, '', ?, '欢迎光临我的开心菜园！', 0, 0, 0)
                 """,
-                (username, password, role, avatar_path),
+                (username, password, role, avatar_path, username),
             )
             conn.commit()
         return self.get_user(username)

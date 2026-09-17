@@ -31,6 +31,7 @@ except Exception:
 from config import AVATAR_DIR, GREEN
 
 FONT_NAME = None
+_WINDOWS_IME_STATE = {}
 
 
 _MD_THEME = None
@@ -96,6 +97,74 @@ def register_chinese_font():
 
 def text_style():
     return {"font_name": FONT_NAME} if FONT_NAME else {}
+
+
+def ascii_input_filter(substring, from_undo=False):
+    """Keep password input limited to ASCII characters."""
+    return "".join(char for char in substring if char.isascii())
+
+
+def set_ascii_input_mode(enabled=True):
+    """Switch the Windows IME between English and the previous mode."""
+    if kivy_platform != "win":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        imm32 = ctypes.windll.imm32
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        imm32.ImmGetContext.argtypes = [wintypes.HWND]
+        imm32.ImmGetContext.restype = wintypes.HANDLE
+        imm32.ImmGetConversionStatus.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(ctypes.c_uint),
+            ctypes.POINTER(ctypes.c_uint),
+        ]
+        imm32.ImmSetConversionStatus.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_uint,
+            ctypes.c_uint,
+        ]
+        imm32.ImmReleaseContext.argtypes = [wintypes.HWND, wintypes.HANDLE]
+
+        hwnd = (user32.GetForegroundWindow() if enabled
+                else _WINDOWS_IME_STATE.get("hwnd"))
+        if not hwnd:
+            return
+        context = imm32.ImmGetContext(hwnd)
+        if not context:
+            return
+
+        conversion = ctypes.c_uint()
+        sentence = ctypes.c_uint()
+        if not imm32.ImmGetConversionStatus(
+                context, ctypes.byref(conversion), ctypes.byref(sentence)):
+            imm32.ImmReleaseContext(hwnd, context)
+            return
+
+        if enabled:
+            if _WINDOWS_IME_STATE.get("hwnd") != hwnd:
+                _WINDOWS_IME_STATE.update(
+                    hwnd=hwnd,
+                    conversion=conversion.value,
+                    sentence=sentence.value,
+                )
+            conversion.value &= ~0x000B  # clear native/kana/full-width modes
+            imm32.ImmSetConversionStatus(context, conversion, sentence)
+        elif _WINDOWS_IME_STATE.get("hwnd") == hwnd:
+            saved_conversion = ctypes.c_uint(
+                _WINDOWS_IME_STATE.get("conversion", 0))
+            saved_sentence = ctypes.c_uint(
+                _WINDOWS_IME_STATE.get("sentence", 0))
+            imm32.ImmSetConversionStatus(
+                context, saved_conversion, saved_sentence)
+            _WINDOWS_IME_STATE.clear()
+
+        imm32.ImmReleaseContext(hwnd, context)
+    except Exception:
+        pass
 
 
 def is_android():

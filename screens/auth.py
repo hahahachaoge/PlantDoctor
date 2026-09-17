@@ -19,10 +19,18 @@ from kivy.uix.widget import Widget
 
 from config import GREEN, IMAGE_DIR
 from database.user_db import USER_DB
-from utils import text_style, show_toast, save_avatar_image, _update_popup_rect
+from utils import (text_style, show_toast, save_avatar_image,
+                   _update_popup_rect, ascii_input_filter,
+                   set_ascii_input_mode)
 from widgets.base_widgets import (
     IconButton, UnderlineLabel, RoundedButton, GrayPlaceholder, CircleImage,
 )
+
+
+def _handle_password_focus(_instance, focused):
+    Clock.schedule_once(
+        lambda _dt: set_ascii_input_mode(bool(focused)), 0,
+    )
 
 
 def _input_icon(filename, fallback_text, icon_size=dp(20)):
@@ -68,20 +76,20 @@ class LoginScreen(Screen):
         self._create_gradient()
         self.layout.bind(pos=self._update_bg, size=self._update_bg)
 
-        # 头像区域
+        # LOGO区域
         self.avatar_wrap = FloatLayout(
-            size_hint=(None, None), size=(dp(76), dp(76)),
+            size_hint=(None, None), size=(dp(130), dp(130)),
             pos_hint={"center_x": 0.5, "top": 0.84},
         )
-        default_avatar = os.path.join(IMAGE_DIR, "nongming.png")
-        self.avatar_image = CircleImage(
+        default_avatar = os.path.join(IMAGE_DIR, "logo1.png")
+        self.avatar_image = KivyImage(
             source=default_avatar if os.path.exists(default_avatar) else "",
-            size_hint=(None, None), size=(dp(76), dp(76)),
-            allow_stretch=True, keep_ratio=False,
+            size_hint=(None, None), size=(dp(130), dp(130)),
+            allow_stretch=True, keep_ratio=True,
         )
         self.avatar_image.pos_hint = {"center_x": 0.5, "center_y": 0.5}
         self.avatar_placeholder = GrayPlaceholder(
-            radius=1, size_hint=(None, None), size=(dp(76), dp(76)),
+            radius=0, size_hint=(None, None), size=(dp(130), dp(130)),
         )
         self.avatar_placeholder.pos_hint = {"center_x": 0.5, "center_y": 0.5}
 
@@ -93,11 +101,11 @@ class LoginScreen(Screen):
 
         # 品牌名称
         self.nick_label = Label(
-            text="开心菜园阿伯",
-            font_size=sp(17), bold=True,
+            text="农智云警",
+            font_size=sp(18), bold=True,
             color=(0.38, 0.48, 0.38, 1),
             size_hint=(0.9, None), height=dp(28),
-            pos_hint={"center_x": 0.5, "top": 0.72},
+            pos_hint={"center_x": 0.5, "top": 0.70},
             halign="center", valign="middle", **text_style(),
         )
         self.nick_label.bind(size=self.nick_label.setter("text_size"))
@@ -153,6 +161,7 @@ class LoginScreen(Screen):
         self.username_input = TextInput(
             hint_text="请输入账号/手机号码",
             multiline=False, input_type="text",
+            keyboard_suggestions=True,
             background_normal="", background_active="",
             background_color=(0, 0, 0, 0),
             foreground_color=(0.12, 0.12, 0.12, 1),
@@ -184,6 +193,7 @@ class LoginScreen(Screen):
         self.password_input = TextInput(
             hint_text="请输入密码",
             multiline=False, password=True,
+            input_type="null", input_filter=ascii_input_filter,
             background_normal="", background_active="",
             background_color=(0, 0, 0, 0),
             foreground_color=(0.12, 0.12, 0.12, 1),
@@ -193,6 +203,7 @@ class LoginScreen(Screen):
             font_size=sp(15),
             keyboard_suggestions=False, **text_style(),
         )
+        self.password_input.bind(focus=_handle_password_focus)
         password_wrap.add_widget(lock_icon)
         password_wrap.add_widget(self.password_input)
         self.layout.add_widget(password_wrap)
@@ -346,7 +357,8 @@ class LoginScreen(Screen):
 
     def _load_avatar(self):
         app = App.get_running_app()
-        default_avatar = os.path.join(IMAGE_DIR, "nongming.png")
+        self.nick_label.text = "农智云警"
+        default_avatar = os.path.join(IMAGE_DIR, "logo.png")
         avatar_path = ""
         if app.current_user and app.current_user.get("avatar_path"):
             avatar_path = app.current_user["avatar_path"]
@@ -378,7 +390,6 @@ class LoginScreen(Screen):
         if not user:
             show_toast("用户名或密码错误，请重试")
             return
-        self.nick_label.text = user.get("nick_name") or user["username"]
         avatar_path = user.get("avatar_path", "")
         if avatar_path and os.path.exists(avatar_path):
             self.avatar_wrap.clear_widgets()
@@ -661,7 +672,8 @@ class RegisterScreen(Screen):
             hint_text_color=(0.65, 0.65, 0.65, 1),
             cursor_color=(0.12, 0.12, 0.12, 1),
             padding=(0, dp(14), dp(14), dp(14)),
-            font_size=sp(15), input_type="text", **text_style(),
+            font_size=sp(15), input_type="text",
+            keyboard_suggestions=True, **text_style(),
         )
         username_wrap.add_widget(user_icon)
         username_wrap.add_widget(self.username_input)
@@ -691,9 +703,11 @@ class RegisterScreen(Screen):
             hint_text_color=(0.65, 0.65, 0.65, 1),
             cursor_color=(0.12, 0.12, 0.12, 1),
             padding=(0, dp(14), dp(14), dp(14)),
-            font_size=sp(15), input_type="text",
+            font_size=sp(15), input_type="null",
+            input_filter=ascii_input_filter,
             keyboard_suggestions=False, **text_style(),
         )
+        self.password_input.bind(focus=_handle_password_focus)
         password_wrap.add_widget(lock_icon)
         password_wrap.add_widget(self.password_input)
         self.layout.add_widget(password_wrap)

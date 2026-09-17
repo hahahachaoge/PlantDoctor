@@ -2,6 +2,9 @@ import os
 import threading
 from importlib import import_module
 
+# Let SDL show the system IME composition/candidate window on desktop.
+os.environ.setdefault("SDL_IME_SHOW_UI", "1")
+
 #os.environ.setdefault("KIVY_NO_FILELOG", "1")
 #os.environ.setdefault("KIVY_NO_CONSOLELOG", "1")
 

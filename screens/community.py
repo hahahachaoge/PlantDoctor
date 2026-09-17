@@ -154,6 +154,33 @@ def _rounded_png(source, radius=12):
     return out
 
 
+def _circular_png(source):
+    """Create a circular transparent PNG without nested stencil operations."""
+    if not source or not os.path.exists(source):
+        return ""
+    cache_dir = os.path.join(IMAGE_DIR, "_rounded")
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+    except OSError:
+        return source
+    base = os.path.splitext(os.path.basename(source))[0]
+    out = os.path.join(cache_dir, f"{base}_circle.png")
+    if not os.path.exists(out):
+        try:
+            from PIL import Image as PILImage, ImageDraw
+            im = PILImage.open(source).convert("RGBA")
+            mask = PILImage.new("L", im.size, 0)
+            ImageDraw.Draw(mask).ellipse(
+                (0, 0, im.size[0] - 1, im.size[1] - 1),
+                fill=255,
+            )
+            im.putalpha(mask)
+            im.save(out)
+        except Exception:
+            return source
+    return out
+
+
 class RoundedImage(ButtonBehavior, KImage):
     """圆角图片：四角透明（PIL 预处理 + 本地缓存），点击可打开详情。"""
 
@@ -189,8 +216,6 @@ class CommunityScreen(Screen):
             self.bg_rect = Rectangle(pos=self.layout.pos, size=self.layout.size)
         self.layout.bind(pos=self._update_bg, size=self._update_bg)
 
-        self.top_bar = self._build_top_bar()
-        self.layout.add_widget(self.top_bar)
 
         # 注意：ScrollView 不能设置 pos_hint，否则 FloatLayout 布局时
         # 会覆盖 _update_layout 中手动设置的 pos=(0, nav_h)，
@@ -209,6 +234,10 @@ class CommunityScreen(Screen):
         self.scroll.add_widget(self.content_box)
 
         self.refresh_default_content()
+
+        # Draw the fixed top bar above the scrollable content.
+        self.top_bar = self._build_top_bar()
+        self.add_widget(self.top_bar)
 
         self.bottom_nav = HomeScreen._build_bottom_nav(self)
         self.layout.add_widget(self.bottom_nav)
@@ -317,19 +346,43 @@ class CommunityScreen(Screen):
             bell_btn.bind(on_press=lambda *_: show_toast("暂无新消息"))
         bar.add_widget(bell_btn)
 
-        # 右侧头像
-        default_avatar = os.path.join(IMAGE_DIR, "nongming.png")
-        if os.path.exists(default_avatar):
+        # 右侧头像：进入社区时按当前登录用户刷新
+        self.community_avatar_wrap = FloatLayout(
+            size_hint=(None, 1), width=dp(38),
+        )
+        bar.add_widget(self.community_avatar_wrap)
+        self._refresh_user_avatar()
+        return bar
+
+    def on_pre_enter(self, *args):
+        self._refresh_user_avatar()
+        return super().on_pre_enter(*args)
+
+    def _refresh_user_avatar(self):
+        avatar_path = ""
+        app = App.get_running_app()
+        if app and app.current_user:
+            app.refresh_current_user()
+            avatar_path = app.current_user.get("avatar_path") or ""
+        if not avatar_path or not os.path.exists(avatar_path):
+            avatar_path = os.path.join(IMAGE_DIR, "nongming.png")
+
+        self.community_avatar_wrap.clear_widgets()
+        if avatar_path and os.path.exists(avatar_path):
             avatar = CircleImage(
-                source=default_avatar,
+                source=avatar_path,
                 size_hint=(None, None), size=(dp(34), dp(34)),
                 allow_stretch=True, keep_ratio=False,
             )
-            avatar_wrap = FloatLayout(size_hint=(None, 1), width=dp(38))
             avatar.pos_hint = {"center_x": 0.5, "center_y": 0.5}
-            avatar_wrap.add_widget(avatar)
-            bar.add_widget(avatar_wrap)
-        return bar
+            self.community_avatar_wrap.add_widget(avatar)
+        else:
+            placeholder = GrayPlaceholder(
+                radius=1,
+                size_hint=(None, None), size=(dp(34), dp(34)),
+            )
+            placeholder.pos_hint = {"center_x": 0.5, "center_y": 0.5}
+            self.community_avatar_wrap.add_widget(placeholder)
 
     def refresh_default_content(self):
         self.content_box.clear_widgets()
@@ -383,10 +436,10 @@ class CommunityScreen(Screen):
             avatar_path = (
                 HOT_USER_AVATARS[idx] if idx < len(HOT_USER_AVATARS) else "")
             if avatar_path and os.path.exists(avatar_path):
-                avatar = CircleImage(
-                    source=avatar_path,
+                avatar = KImage(
+                    source=_circular_png(avatar_path),
                     size_hint=(None, None), size=(dp(54), dp(54)),
-                    allow_stretch=True, keep_ratio=False,
+                    fit_mode="fill",
                 )
                 wrap = FloatLayout(size_hint=(1, 1))
                 avatar.pos_hint = {"center_x": 0.5, "center_y": 0.5}
@@ -438,10 +491,10 @@ class CommunityScreen(Screen):
         if not os.path.exists(avatar_path):
             avatar_path = os.path.join(IMAGE_DIR, "nongming.png")
         if avatar_path and os.path.exists(avatar_path):
-            avatar = CircleImage(
-                source=avatar_path,
+            avatar = KImage(
+                source=_circular_png(avatar_path),
                 size_hint=(None, None), size=(dp(44), dp(44)),
-                allow_stretch=True, keep_ratio=False,
+                fit_mode="fill",
             )
         else:
             avatar = GrayPlaceholder(
