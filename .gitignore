@@ -28,6 +28,7 @@ photos/*
 
 # AI model weights & datasets (files exceed GitHub size limits, obtain separately)
 *.pth
+pest_model.pth
 ai_model/data/
 ai_model/checkpoints/
 
