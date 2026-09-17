@@ -1,0 +1,4 @@
+1，终端输入：cd "C:\Users\zhouminghao\Desktop\nongzhi1改 6.0\ai_model"
+python api.py
+2，在浏览器输入http://192.168.0.101:8000  检查api.py是否启动成功
+3.在终端输入
