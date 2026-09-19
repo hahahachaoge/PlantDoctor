@@ -23,7 +23,7 @@ from kivy.uix.screenmanager import ScreenManager
 from config import GREEN
 from database.user_db import USER_DB
 from database.store_db import STORE_DB
-from utils import (text_style, show_toast, is_android, is_android_permission_granted,
+from utils import (text_style, show_toast, open_text_popup, is_android, is_android_permission_granted,
                    register_chinese_font, _update_popup_rect, patch_opencv_camera,
                    ensure_md_theme)
 from widgets.base_widgets import RoundedButton
@@ -32,10 +32,16 @@ from screens.home import HomeScreen
 from screens.farming_plan import FarmingPlanScreen
 from screens.community import CommunityScreen, CommunityDetailScreen
 from screens.store import StoreScreen, StoreCategoryScreen, PesticideDetailScreen
-from screens.mypage import MyPageScreen, FavoriteScreen, OrderScreen
+from screens.mypage import MyPageScreen
+from screens.account_pages import (
+    CustomerServiceScreen, FavoriteScreen, FeedbackScreen,
+    NotificationScreen, OrderScreen, ProfileScreen,
+)
 from screens.encyclopedia import EncyclopediaScreen, PestDetailScreen
-from screens.misc import MapScreen
+from screens.misc import MapDataScreen, MapScreen
 from screens.camera import CameraScreen, ResultScreen
+from screens.qr_scanner import QRScannerScreen
+from screens.search_results import SearchResultsScreen
 
 
 register_chinese_font()
@@ -79,9 +85,16 @@ class MyApp(App):
             sm.add_widget(EncyclopediaScreen())
             sm.add_widget(PestDetailScreen())
             sm.add_widget(MyPageScreen())
+            sm.add_widget(NotificationScreen())
+            sm.add_widget(ProfileScreen())
+            sm.add_widget(FeedbackScreen())
+            sm.add_widget(CustomerServiceScreen())
             sm.add_widget(MapScreen())
+            sm.add_widget(MapDataScreen())
             sm.add_widget(CameraScreen())
             sm.add_widget(ResultScreen())
+            sm.add_widget(QRScannerScreen())
+            sm.add_widget(SearchResultsScreen())
             sm.add_widget(PesticideDetailScreen())
             sm.current = "login"
             # 启动后台自动发现服务器
@@ -167,6 +180,16 @@ class MyApp(App):
         register_screen.selected_avatar_source = image_path
         register_screen._show_selected_avatar()
         self.root.current = "register"
+
+    def open_qr_scanner(self, return_screen=None):
+        scanner = self.root.get_screen("qr_scanner")
+        scanner.return_screen = return_screen or self.root.current or "home"
+        self.root.current = "qr_scanner"
+
+    def handle_qr_scan(self, image_path):
+        scanner = self.root.get_screen("qr_scanner")
+        self.root.current = "qr_scanner"
+        scanner.scan_image(image_path, source="相机")
 
     def show_capture_menu(self, after_action=None):
         popup = ModalView(size_hint=(0.82, None), height=dp(228),
@@ -424,7 +447,11 @@ class MyApp(App):
 
     def start_recognition_for_image(self, image_path, on_success=None, on_error=None):
         if not self.can_current_user_recognize():
-            show_toast("免费用户每天限识别3次，升级VIP解锁无限次")
+            open_text_popup(
+                "今日免费次数已用完",
+                "普通用户每天可免费识别 3 次。\n升级 VIP 后可不限次数使用拍照识别。",
+                height=300,
+            )
             return False
         threading.Thread(
             target=self._do_recognize_image,

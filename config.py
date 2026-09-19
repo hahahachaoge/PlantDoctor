@@ -14,6 +14,8 @@ GREEN = (0.12, 0.58, 0.30, 1)
 STORE_DB_PATH = os.path.join(_BASE_DIR, "smart_agri.db")
 AVATAR_DIR = os.path.join(_BASE_DIR, "avatars")
 IMAGE_DIR = os.path.join(_BASE_DIR, "image")
+DISEASE_INFO_PATH = os.path.join(_BASE_DIR, "ai_model", "disease_info.json")
+DISEASE_METADATA_PATH = os.path.join(_BASE_DIR, "ai_model", "disease_metadata.json")
 
 
 
@@ -511,6 +513,5 @@ def set_api_base_url(url):
             f.write(url.rstrip("/"))
     except Exception:
         pass
-
 
 

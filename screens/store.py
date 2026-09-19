@@ -486,6 +486,7 @@ class StoreScreen(Screen):
     def open_pesticide_detail(self, pesticide_id):
         try:
             detail_screen = self.manager.get_screen("pesticide_detail")
+            detail_screen.return_screen = "store"
             detail_screen.set_pesticide(pesticide_id)
             self.manager.current = "pesticide_detail"
         except Exception as exc:
@@ -544,6 +545,7 @@ class PesticideDetailScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.name = "pesticide_detail"
+        self.return_screen = "store"
         self.build_ui()
 
     def build_ui(self):
@@ -777,4 +779,5 @@ class PesticideDetailScreen(Screen):
         self.scroll_view.scroll_y = 1
 
     def go_back(self, _instance=None):
-        self.manager.current = "store"
+        target = self.return_screen if self.manager.has_screen(self.return_screen) else "store"
+        self.manager.current = target

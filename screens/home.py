@@ -798,7 +798,8 @@ class HomeScreen(Screen):
             size_hint=(None, 1), width=dp(30),
             allow_stretch=True, keep_ratio=True,
         )
-        scan_btn.bind(on_press=lambda *_: show_toast("扫一扫功能开发中"))
+        scan_btn.bind(
+            on_press=lambda *_: App.get_running_app().open_qr_scanner("home"))
         scan_wrap.add_widget(Widget())      # 左侧空白占位，图标靠右
         scan_wrap.add_widget(scan_btn)
         bar.add_widget(scan_wrap)
@@ -1371,18 +1372,14 @@ class HomeScreen(Screen):
         return container
 
     def search_pests(self, _instance=None):
-        keyword = self.home_search_input.text.strip().lower()
+        keyword = self.home_search_input.text.strip()
         if not keyword:
-            show_toast("请输入病虫害名称")
+            show_toast("请输入搜索关键词")
             return
-        pests = STORE_DB.get_pest_entries()
-        for pest in pests:
-            if keyword in pest["name"].lower():
-                detail_screen = self.manager.get_screen("pest_detail")
-                detail_screen.set_pest(pest["id"])
-                self.manager.current = "pest_detail"
-                return
-        show_toast("未找到相关病虫害")
+        results_screen = self.manager.get_screen("search_results")
+        results_screen.show_results(keyword)
+        self.home_search_input.focus = False
+        self.manager.current = "search_results"
 
     def cancel_home_search(self, _instance=None):
         self.home_search_input.text = ""

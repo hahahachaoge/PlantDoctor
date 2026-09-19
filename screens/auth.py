@@ -3,7 +3,7 @@ import random
 
 from kivy.app import App
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, RoundedRectangle, Ellipse
+from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp, sp
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -31,6 +31,17 @@ def _handle_password_focus(_instance, focused):
     Clock.schedule_once(
         lambda _dt: set_ascii_input_mode(bool(focused)), 0,
     )
+
+
+def _enforce_ascii_password(instance, value):
+    """Reject IME-committed non-ASCII text as well as ordinary key input."""
+    cleaned = ascii_input_filter(value)
+    if cleaned == value:
+        return
+    cursor = min(instance.cursor_index(), len(cleaned))
+    instance.text = cleaned
+    instance.cursor = instance.get_cursor_from_index(cursor)
+    Clock.schedule_once(lambda _dt: set_ascii_input_mode(True), 0)
 
 
 def _input_icon(filename, fallback_text, icon_size=dp(20)):
@@ -193,7 +204,7 @@ class LoginScreen(Screen):
         self.password_input = TextInput(
             hint_text="请输入密码",
             multiline=False, password=True,
-            input_type="null", input_filter=ascii_input_filter,
+            input_type="text", input_filter=ascii_input_filter,
             background_normal="", background_active="",
             background_color=(0, 0, 0, 0),
             foreground_color=(0.12, 0.12, 0.12, 1),
@@ -203,7 +214,8 @@ class LoginScreen(Screen):
             font_size=sp(15),
             keyboard_suggestions=False, **text_style(),
         )
-        self.password_input.bind(focus=_handle_password_focus)
+        self.password_input.bind(focus=_handle_password_focus,
+                                 text=_enforce_ascii_password)
         password_wrap.add_widget(lock_icon)
         password_wrap.add_widget(self.password_input)
         self.layout.add_widget(password_wrap)
@@ -373,6 +385,8 @@ class LoginScreen(Screen):
             self.avatar_wrap.add_widget(self.avatar_placeholder)
 
     def on_leave(self, *args):
+        self.password_input.focus = False
+        set_ascii_input_mode(False)
         self.username_input.text = ""
         self.password_input.text = ""
         return super().on_leave(*args)
@@ -703,11 +717,12 @@ class RegisterScreen(Screen):
             hint_text_color=(0.65, 0.65, 0.65, 1),
             cursor_color=(0.12, 0.12, 0.12, 1),
             padding=(0, dp(14), dp(14), dp(14)),
-            font_size=sp(15), input_type="null",
+            font_size=sp(15), input_type="text",
             input_filter=ascii_input_filter,
             keyboard_suggestions=False, **text_style(),
         )
-        self.password_input.bind(focus=_handle_password_focus)
+        self.password_input.bind(focus=_handle_password_focus,
+                                 text=_enforce_ascii_password)
         password_wrap.add_widget(lock_icon)
         password_wrap.add_widget(self.password_input)
         self.layout.add_widget(password_wrap)
@@ -968,6 +983,8 @@ class RegisterScreen(Screen):
         self._show_selected_avatar()
 
     def on_leave(self, *args):
+        self.password_input.focus = False
+        set_ascii_input_mode(False)
         self.clear_form()
         return super().on_leave(*args)
 

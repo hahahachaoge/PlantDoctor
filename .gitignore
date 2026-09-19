@@ -25,10 +25,13 @@ api_url.txt
 smart_agri.db
 photos/*
 !photos/.keep
+avatars/*
+image/_rounded/*
 
 # AI model weights & datasets (files exceed GitHub size limits, obtain separately)
 *.pth
 pest_model.pth
+best_model.zip
 ai_model/data/
 ai_model/checkpoints/
 

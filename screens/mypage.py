@@ -241,10 +241,8 @@ class MyPageScreen(Screen):
         menu_items = [
             ("我的档案", "我的档案.png", self.open_profile_editor),
             ("我的订单", "我的订单.png", self.open_orders),
-            ("我的反馈", "我的反馈.png",
-             lambda *_: open_text_popup("我的反馈", "即将推出")),
-            ("客服服务", "客服服务.png",
-             lambda *_: open_text_popup("客服服务", "即将推出")),
+            ("我的反馈", "我的反馈.png", self.open_feedback),
+            ("客服服务", "客服服务.png", self.open_customer_service),
         ]
         for title, icon_file, callback in menu_items:
             self.content_box.add_widget(
@@ -290,9 +288,10 @@ class MyPageScreen(Screen):
         actions_row = BoxLayout(size_hint=(1, None), height=dp(86))
 
         items = [
-            ("通知", "通知.png", self._show_notification_popup),
+            ("通知", "通知.png", self.open_notifications),
             ("二维码", "二维码名片.png", self._show_qrcode_popup),
-            ("拍照", "图层 8.png", lambda *_: App.get_running_app().show_capture_menu()),
+            ("扫一扫", "扫一扫.png",
+             lambda *_: App.get_running_app().open_qr_scanner("mypage")),
             ("通讯录", "通讯录.png", self._show_contact_popup),
         ]
 
@@ -782,10 +781,19 @@ class MyPageScreen(Screen):
         popup.open()
 
     def open_profile_editor(self, _instance=None):
-        self.edit_profile_field("nick_name", "编辑我的档案", self.nick_name)
+        self.manager.current = "profile"
 
     def open_orders(self, _instance=None):
         self.manager.current = "order"
+
+    def open_notifications(self, _instance=None):
+        self.manager.current = "notifications"
+
+    def open_feedback(self, _instance=None):
+        self.manager.current = "feedback"
+
+    def open_customer_service(self, _instance=None):
+        self.manager.current = "customer_service"
 
     def logout(self, _instance=None):
         app = App.get_running_app()
@@ -1053,10 +1061,150 @@ class MyPageScreen(Screen):
         popup.add_widget(box)
         popup.open()
 
+    def _show_qrcode_popup(self, *_):
+        """Create a real, scannable and account-specific profile QR code."""
+        import hashlib
+        from urllib.parse import quote
 
+        import qrcode
+        from kivy.uix.image import Image as KivyImage
 
+        app = App.get_running_app()
+        user = app.current_user if app and app.current_user else {}
+        user_id = int(user.get("id", 0))
+        username = user.get("username", "guest")
+        nick = user.get("nick_name") or username
+        token = hashlib.sha256(
+            f"PlantDoctor:v1:{user_id}:{username}".encode("utf-8")
+        ).hexdigest()[:24]
+        payload = (
+            f"plantdoctor://profile/{user_id}?username={quote(username)}"
+            f"&token={token}"
+        )
+        qr_dir = os.path.join(os.path.dirname(IMAGE_DIR), "photos", "qrcodes")
+        os.makedirs(qr_dir, exist_ok=True)
+        qr_path = os.path.join(qr_dir, f"profile_{user_id}_{token[:10]}.png")
+        if not os.path.exists(qr_path):
+            qr = qrcode.QRCode(version=None, box_size=8, border=3)
+            qr.add_data(payload)
+            qr.make(fit=True)
+            qr.make_image(fill_color="#102318", back_color="white").save(qr_path)
 
+        popup = ModalView(
+            size_hint=(0.88, None), height=dp(430), background="",
+            background_color=(0, 0, 0, 0), overlay_color=(0, 0, 0, 0.45))
+        box = BoxLayout(orientation="vertical", spacing=dp(10), padding=dp(16))
+        with box.canvas.before:
+            Color(1, 1, 1, 1)
+            bg = RoundedRectangle(pos=box.pos, size=box.size, radius=[dp(18)] * 4)
+        box.bind(
+            pos=lambda item, *_: _update_popup_rect(item, bg),
+            size=lambda item, *_: _update_popup_rect(item, bg))
+        title = Label(
+            text="我的二维码名片", font_size=sp(19), bold=True, color=(0.08, 0.08, 0.08, 1),
+            size_hint=(1, None), height=dp(34), halign="center", valign="middle",
+            **text_style())
+        title.bind(size=title.setter("text_size"))
+        box.add_widget(title)
+        box.add_widget(KivyImage(
+            source=qr_path, size_hint=(1, None), height=dp(240), fit_mode="contain"))
+        caption = Label(
+            text=nick,
+            font_size=sp(13), color=(0.25, 0.35, 0.28, 1),
+            size_hint=(1, None), height=dp(28), halign="center", valign="middle",
+            **text_style())
+        caption.bind(size=caption.setter("text_size"))
+        box.add_widget(caption)
+        close = RoundedButton(
+            text="关闭", color=(1, 1, 1, 1), size_hint=(1, None),
+            height=dp(44), **text_style())
+        close.bind(on_release=lambda *_args: popup.dismiss())
+        box.add_widget(close)
+        popup.add_widget(box)
+        popup.open()
 
+    def _show_contact_popup(self, *_):
+        popup = ModalView(
+            size_hint=(0.92, None), height=dp(430), background="",
+            background_color=(0, 0, 0, 0), overlay_color=(0, 0, 0, 0.45))
+        box = BoxLayout(
+            orientation="vertical", spacing=dp(7),
+            padding=(dp(14), dp(8), dp(8), dp(12)))
+        with box.canvas.before:
+            Color(1, 1, 1, 1)
+            bg = RoundedRectangle(pos=box.pos, size=box.size, radius=[dp(18)] * 4)
+        box.bind(
+            pos=lambda item, *_: _update_popup_rect(item, bg),
+            size=lambda item, *_: _update_popup_rect(item, bg))
+        title = Label(
+            text="通讯录", font_size=sp(19), bold=True, color=(0.08, 0.08, 0.08, 1),
+            size_hint=(1, None), height=dp(34), halign="center", valign="middle",
+            **text_style())
+        title.bind(size=title.setter("text_size"))
+        box.add_widget(title)
+        contact_scroll = ScrollView(
+            size_hint=(1, 1), do_scroll_x=False, do_scroll_y=True,
+            bar_width=dp(4), bar_margin=dp(2),
+            bar_color=(0.12, 0.58, 0.30, 0.88),
+            bar_inactive_color=(0.70, 0.78, 0.72, 0.45),
+            scroll_type=["content", "bars"],
+        )
+        contact_list = BoxLayout(
+            orientation="vertical", spacing=dp(7), size_hint=(1, None),
+            padding=(0, 0, dp(5), 0))
+        contact_list.bind(minimum_height=contact_list.setter("height"))
+        contacts = (
+            ("张大哥", "农业技术员 · 广东广州", "user1.jpg"),
+            ("李师傅", "水稻种植户 · 广东肇庆", "user2.jpg"),
+            ("陈园主", "蔬菜基地负责人 · 广东佛山", "user3.jpg"),
+            ("王大姐", "小麦种植户 · 河南周口", "user4.jpg"),
+            ("赵师傅", "水稻育秧户 · 湖南益阳", "user5.jpg"),
+        )
+        for name, role, avatar_name in contacts:
+            row = BoxLayout(
+                spacing=dp(11), padding=(dp(8), dp(6)),
+                size_hint=(1, None), height=dp(66))
+            with row.canvas.before:
+                Color(0.95, 0.98, 0.96, 1)
+                row_bg = RoundedRectangle(pos=row.pos, size=row.size,
+                                          radius=[dp(12)] * 4)
+            row.bind(
+                pos=lambda item, shape=row_bg, *_: setattr(shape, "pos", item.pos),
+                size=lambda item, shape=row_bg, *_: setattr(shape, "size", item.size))
+            avatar = CircleImage(
+                source=os.path.join(IMAGE_DIR, avatar_name),
+                size_hint=(None, None), size=(dp(50), dp(50)))
+            row.add_widget(avatar)
+            info = BoxLayout(orientation="vertical", spacing=0)
+            name_label = Label(
+                text=name, font_size=sp(15), bold=True, color=(0.08, 0.08, 0.08, 1),
+                size_hint=(1, None), height=dp(27), halign="left", valign="middle",
+                **text_style())
+            role_label = Label(
+                text=role, font_size=sp(11), color=(0.48, 0.52, 0.49, 1),
+                size_hint=(1, None), height=dp(23), halign="left", valign="middle",
+                **text_style())
+            name_label.bind(size=name_label.setter("text_size"))
+            role_label.bind(size=role_label.setter("text_size"))
+            info.add_widget(name_label)
+            info.add_widget(role_label)
+            row.add_widget(info)
+            contact = RoundedButton(
+                text="联系", font_size=sp(12), color=(1, 1, 1, 1),
+                size_hint=(None, None), size=(dp(58), dp(34)), **text_style())
+            contact.bind(
+                on_release=lambda *_args, person=name: show_toast(f"正在联系 {person}"))
+            row.add_widget(contact)
+            contact_list.add_widget(row)
+        contact_scroll.add_widget(contact_list)
+        box.add_widget(contact_scroll)
+        close = RoundedButton(
+            text="关闭", color=(1, 1, 1, 1), size_hint=(1, None),
+            height=dp(44), **text_style())
+        close.bind(on_release=lambda *_args: popup.dismiss())
+        box.add_widget(close)
+        popup.add_widget(box)
+        popup.open()
 
 
 class FavoriteScreen(Screen):

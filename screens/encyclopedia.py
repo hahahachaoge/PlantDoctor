@@ -157,6 +157,7 @@ class EncyclopediaScreen(Screen):
 
     def open_pest_detail(self, pest_id):
         detail_screen = self.manager.get_screen("pest_detail")
+        detail_screen.return_screen = "encyclopedia"
         detail_screen.set_pest(pest_id)
         self.manager.current = "pest_detail"
 
@@ -166,6 +167,7 @@ class PestDetailScreen(Screen):
         super().__init__(**kwargs)
         self.name = "pest_detail"
         self.current_pest_id = None
+        self.return_screen = "encyclopedia"
         self.build_ui()
 
     def build_ui(self):
@@ -190,8 +192,7 @@ class PestDetailScreen(Screen):
             size_hint=(None, None), size=(dp(56), dp(56)),
             pos_hint={"x": 0.03, "center_y": 0.5}, **text_style(),
         )
-        self.back_btn.bind(
-            on_press=lambda *_: setattr(self.manager, "current", "encyclopedia"))
+        self.back_btn.bind(on_press=self.go_back)
         self.top_bar.add_widget(self.back_btn)
 
         self.title_label = Label(
@@ -316,6 +317,10 @@ class PestDetailScreen(Screen):
 
         self.content_box.add_widget(
             self.photo, index=len(self.content_box.children))
+
+    def go_back(self, *_args):
+        target = self.return_screen if self.manager.has_screen(self.return_screen) else "encyclopedia"
+        self.manager.current = target
 
 
 

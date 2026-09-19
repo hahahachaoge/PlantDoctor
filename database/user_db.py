@@ -41,6 +41,21 @@ class UserDatabase:
             self._ensure_column(conn, "users", "following_count", "INTEGER DEFAULT 0")
             self._ensure_column(conn, "users", "followers_count", "INTEGER DEFAULT 0")
             self._ensure_column(conn, "users", "share_count", "INTEGER DEFAULT 0")
+            self._ensure_column(conn, "users", "gender", "TEXT DEFAULT '未设置'")
+            self._ensure_column(conn, "users", "phone", "TEXT DEFAULT ''")
+            self._ensure_column(conn, "users", "region", "TEXT DEFAULT ''")
+            self._ensure_column(conn, "users", "main_crop", "TEXT DEFAULT ''")
+            self._ensure_column(conn, "users", "birth_date", "TEXT DEFAULT ''")
+            # Repair profiles written by older builds that decoded UTF-8 text
+            # with the wrong Windows code page.
+            conn.execute(
+                "UPDATE users SET nick_name = username "
+                "WHERE nick_name IS NULL OR nick_name = '' OR nick_name LIKE '%�%'"
+            )
+            conn.execute(
+                "UPDATE users SET signature = '欢迎来到我的智慧农场' "
+                "WHERE signature IS NULL OR signature = '' OR signature LIKE '%�%'"
+            )
             conn.commit()
 
     @staticmethod
@@ -66,6 +81,11 @@ class UserDatabase:
             "following_count": int(row["following_count"] or 0),
             "followers_count": int(row["followers_count"] or 0),
             "share_count": int(row["share_count"] or 0),
+            "gender": row["gender"] or "未设置",
+            "phone": row["phone"] or "",
+            "region": row["region"] or "",
+            "main_crop": row["main_crop"] or "",
+            "birth_date": row["birth_date"] or "",
         }
 
     def get_user(self, username):
@@ -115,6 +135,24 @@ class UserDatabase:
             conn.execute(
                 "UPDATE users SET nick_name = ?, signature = ? WHERE username = ?",
                 (nick_name, signature, username),
+            )
+            conn.commit()
+        return self.get_user(username)
+
+    def update_profile_details(self, username, **values):
+        """Update editable profile fields while keeping account identity immutable."""
+        allowed = {
+            "nick_name", "signature", "gender", "phone", "region",
+            "main_crop", "birth_date",
+        }
+        updates = {key: value for key, value in values.items() if key in allowed}
+        if not updates or not self.get_user(username):
+            return self.get_user(username)
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        parameters = list(updates.values()) + [username]
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE users SET {assignments} WHERE username = ?", parameters
             )
             conn.commit()
         return self.get_user(username)

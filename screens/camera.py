@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import datetime
 from importlib import import_module
@@ -16,11 +17,40 @@ from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 from kivy.uix.widget import Widget
 
-from config import GREEN, IMAGE_DIR
-from utils import (text_style, show_toast, is_android,
+from config import (DISEASE_INFO_PATH, DISEASE_METADATA_PATH, GREEN,
+                    IMAGE_DIR)
+from utils import (text_style, show_toast, open_text_popup, is_android,
                    is_android_permission_granted, bind_deferred_layout,
                    patch_opencv_camera, probe_camera_index)
 from widgets.base_widgets import IconButton, RoundedButton, CircleImage, GrayPlaceholder
+
+
+def _load_disease_details():
+    """Load the bundled catalogue so older API deployments still show details."""
+    details = {}
+    try:
+        with open(DISEASE_INFO_PATH, "r", encoding="utf-8") as file_obj:
+            document = json.load(file_obj)
+        if isinstance(document, dict):
+            details = {
+                key: dict(value) for key, value in document.items()
+                if isinstance(value, dict)
+            }
+    except (OSError, ValueError, TypeError):
+        pass
+
+    try:
+        with open(DISEASE_METADATA_PATH, "r", encoding="utf-8") as file_obj:
+            metadata = json.load(file_obj).get("entries", {})
+        for raw_class, values in metadata.items():
+            if isinstance(values, dict):
+                details.setdefault(raw_class, {}).update(values)
+    except (OSError, ValueError, TypeError, AttributeError):
+        pass
+    return details
+
+
+DISEASE_DETAILS = _load_disease_details()
 
 
 class CameraScreen(Screen):
@@ -90,6 +120,11 @@ class CameraScreen(Screen):
             Ellipse(pos=self.capture_btn.pos, size=self.capture_btn.size)
 
     def on_pre_enter(self, *args):
+        app = App.get_running_app()
+        self.capture_label.text = (
+            "点击扫描" if getattr(app, "camera_mode", "recognize") == "scan"
+            else "点击拍照"
+        )
         self._force_portrait_preview()
         self._request_camera_permission()
         return super().on_pre_enter(*args)
@@ -196,6 +231,17 @@ class CameraScreen(Screen):
         if self.camera is not None:
             return True
         try:
+            # Windows 必须先确认 cv2 存在，再导入 Kivy Camera provider。
+            # 否则 Kivy 会依次尝试 picamera / gi / opencv 并打印误导性 CRITICAL。
+            if not is_android():
+                try:
+                    import_module("cv2")
+                except ImportError:
+                    self._show_status(
+                        "缺少 OpenCV 相机组件，请运行：pip install opencv-python"
+                    )
+                    return False
+
             # OpenCV 5.x 与 Kivy 2.3.0 不兼容（_device 为 None，每帧报错刷屏）
             patch_opencv_camera()
             # 修复 Kivy 2.3.0 的 CameraOpenCV 缺少 fps 属性的 bug
@@ -270,7 +316,11 @@ class CameraScreen(Screen):
         app = App.get_running_app()
         if getattr(app, "camera_mode", "recognize") == "recognize" \
                 and not app.can_current_user_recognize():
-            show_toast("免费用户每天限识别3次，升级VIP解锁无限次")
+            open_text_popup(
+                "今日免费次数已用完",
+                "普通用户每天可免费识别 3 次。\n升级 VIP 后可不限次数使用拍照识别。",
+                height=300,
+            )
             return
         if not self.camera or not self.camera.play:
             self._show_status("摄像头未启动，请稍候")
@@ -280,7 +330,11 @@ class CameraScreen(Screen):
             return
         self.capture_in_progress = True
         self.capture_btn.disabled = True
-        self._show_status("正在识别...")
+        self._show_status(
+            "正在读取二维码..."
+            if getattr(app, "camera_mode", "recognize") == "scan"
+            else "正在识别..."
+        )
         Clock.schedule_once(lambda dt: self._capture_current_frame(), 0.05)
 
     def _build_photo_path(self):
@@ -295,6 +349,11 @@ class CameraScreen(Screen):
             app = App.get_running_app()
             if getattr(app, "camera_mode", "recognize") == "avatar":
                 app.handle_avatar_capture(image_path)
+                self._show_status("")
+                self._finish_capture()
+                return
+            if getattr(app, "camera_mode", "recognize") == "scan":
+                app.handle_qr_scan(image_path)
                 self._show_status("")
                 self._finish_capture()
                 return
@@ -557,9 +616,19 @@ class ResultScreen(Screen):
             pos=lambda i, *_: setattr(self.chip_bar_bg, "pos", i.pos),
             size=lambda i, *_: setattr(self.chip_bar_bg, "size", i.size),
         )
-        self.chip_scroll = ScrollView(do_scroll_x=False, bar_width=dp(0))
-        self.chip_row = BoxLayout(orientation="horizontal",
-                                  spacing=dp(10), size_hint=(None, 1))
+        self.chip_scroll = ScrollView(
+            do_scroll_x=True,
+            do_scroll_y=False,
+            scroll_type=["content", "bars"],
+            bar_width=dp(4),
+            bar_margin=dp(1),
+            bar_color=(0.12, 0.58, 0.30, 0.85),
+            bar_inactive_color=(0.72, 0.78, 0.73, 0.45),
+        )
+        self.chip_row = BoxLayout(
+            orientation="horizontal", spacing=dp(10), size_hint=(None, 1),
+            padding=(0, dp(2), 0, dp(9)),
+        )
         self.chip_row.bind(minimum_width=self.chip_row.setter("width"))
         self.chip_scroll.add_widget(self.chip_row)
         self.chip_bar.add_widget(self.chip_scroll)
@@ -674,13 +743,39 @@ class ResultScreen(Screen):
     def set_result(self, image_path, data):
         self.photo_path = image_path or ""
         self._result_data = data or {}
-        self._top5 = self._result_data.get("top5") or []
-        if not self._top5:
-            self._top5 = [{
+        top5 = self._result_data.get("top5") or []
+        if not top5:
+            top5 = [{
                 "chinese_name": self._result_data.get("pest_name", "未知"),
                 "raw_class": self._result_data.get("raw_class", ""),
                 "confidence": self._result_data.get("confidence", 0),
             }]
+
+        # Merge the bundled catalogue into every candidate.  This both supports
+        # old servers and makes candidate chips show their own matching details.
+        self._top5 = []
+        for index, candidate in enumerate(top5):
+            item = dict(candidate)
+            raw_class = item.get("raw_class", "")
+            bundled = DISEASE_DETAILS.get(raw_class, {})
+            enriched = dict(bundled)
+            enriched.update(item)
+            if index == 0:
+                treatment = self._result_data.get("treatment", {}) or {}
+                if isinstance(treatment, dict):
+                    result_method = treatment.get("method")
+                else:
+                    result_method = treatment
+                first_values = {
+                    "intro": self._result_data.get("intro"),
+                    "method": result_method or self._result_data.get("treatment_text"),
+                    "alias": self._result_data.get("alias"),
+                    "region": self._result_data.get("region"),
+                }
+                for key, value in first_values.items():
+                    if value:
+                        enriched[key] = value
+            self._top5.append(enriched)
 
         # 顶部大图始终用用户上传/相机拍摄的图片
         if self.photo_path and os.path.exists(self.photo_path):
@@ -702,6 +797,8 @@ class ResultScreen(Screen):
             self._chips.append(chip)
             self.chip_row.add_widget(chip)
 
+        # 每次打开新结果都从第一项开始，用户可向左拖动内容查看右侧候选。
+        self.chip_scroll.scroll_x = 0
         self._select_chip(0)
         self.scroll.scroll_y = 1
 
@@ -748,21 +845,18 @@ class ResultScreen(Screen):
         if thumb_source:
             self.thumb.set_source(thumb_source)
 
-        if index == 0:
-            intro = self._result_data.get("intro", "")
-            treatment = self._result_data.get("treatment", {}) or {}
-            method = (treatment.get("method")
-                      or self._result_data.get("treatment_text") or "")
-            feature = intro or "暂无形态描述资料"
-            treat = method or "暂无防治建议"
-        else:
-            feature = "暂无该候选的详细资料，请以第一识别结果为准"
-            treat = "暂无该候选的详细资料，请以第一识别结果为准"
+        feature = item.get("intro") or "暂无形态描述资料"
+        treatment = item.get("treatment", {}) or {}
+        if isinstance(treatment, dict):
+            treatment = treatment.get("method", "")
+        treat = item.get("method") or treatment or "暂无防治建议"
+        alias = item.get("alias") or "暂无经核实的常用别名"
+        region = item.get("region") or "暂无经核实的分布资料"
 
         self.section_labels["feature"].text = feature
         self.section_labels["treatment"].text = treat
-        self.section_labels["alias"].text = "暂无别名资料"
-        self.section_labels["region"].text = "暂无分布地区资料"
+        self.section_labels["alias"].text = alias
+        self.section_labels["region"].text = region
 
     def _on_more(self, *_args):
         App.get_running_app().show_capture_menu()

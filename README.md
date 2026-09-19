@@ -10,6 +10,14 @@
 
 **Plant Doctor（智农慧眼，Windows 打包名“农智慧眼”）** 是一款面向农户的智慧农业病虫害识别应用：客户端基于 **Kivy** 开发，一套代码同时运行于 Windows 桌面与 Android 手机；识别能力由局域网内的 **FastAPI + ConvNeXt** 推理服务提供，照片不出局域网，兼顾隐私与速度。此外还集成了农资商城、种植社区、虫害百科、农事计划、病虫害分布图与天气提醒等功能。
 
+### 近期功能更新
+
+- 首页搜索升级为跨模块关键词检索，病虫害、农药、商品、社区帖子与文章按条目展示；从详情返回时保留原搜索结果页。
+- 识别结果补充 Top-5 横向浏览、病虫害别名、分布地区及可追溯资料来源。
+- 病虫害分布图使用广州真实在线街道瓦片，支持鼠标或触摸自由拖动、现场观察点上报、标记避让和逐点数据查看。
+- 新增扫一扫、用户专属二维码，以及通知、档案、收藏、订单、反馈和客服等完整页面。
+- 优化普通用户识别额度提示、登录密码输入、通讯录滚动与多处移动端界面细节。
+
 ---
 
 ## 目录
@@ -61,15 +69,16 @@
 | 模块         | 源码位置                                             | 功能说明                                                                   |
 | ------------ | ---------------------------------------------------- | -------------------------------------------------------------------------- |
 | 登录 / 注册  | [`screens/auth.py`](screens/auth.py)                 | 用户名密码登录；注册可选头像与角色（免费用户 / VIP）                       |
-| 首页         | [`screens/home.py`](screens/home.py)                 | 天气卡片、今日农事提醒、常用工具入口、病虫害搜索、底部导航                 |
+| 首页         | [`screens/home.py`](screens/home.py)、[`screens/search_results.py`](screens/search_results.py) | 天气、农事提醒、工具入口及跨病虫害/农药/商品/社区的关键词搜索 |
 | 拍照识别     | [`screens/camera.py`](screens/camera.py)             | 实时相机取景（Android 权限申请 + 竖屏预览）或从相册/本地选图，上传后端识别 |
 | 识别结果     | [`screens/camera.py`](screens/camera.py)             | 病虫害中文名、置信度、症状简介、防治方法与 Top-5 候选                      |
 | 社区         | [`screens/community.py`](screens/community.py)       | 帖子列表与详情、点赞、浏览计数、评论、种植经验/防治技巧文章                |
 | 农资商城     | [`screens/store.py`](screens/store.py)               | 广告位与分区推荐、分类列表、商品搜索、收藏、下单、评论、农药详情           |
 | 虫害百科     | [`screens/encyclopedia.py`](screens/encyclopedia.py) | 按作物分类的病虫害词条列表与详情（介绍 + 防治方法）                        |
 | 农事计划     | [`screens/farming_plan.py`](screens/farming_plan.py) | 农事提醒与计划管理                                                         |
-| 病虫害分布图 | [`screens/misc.py`](screens/misc.py)                 | 图片型虫情分布展示页                                                       |
-| 个人中心     | [`screens/mypage.py`](screens/mypage.py)             | 头像/昵称/签名、我的收藏、我的订单                                         |
+| 病虫害分布图 | [`screens/misc.py`](screens/misc.py)                 | 广州全域真实街道底图、自由拖动、观察点上报、标记避让与逐点数据             |
+| 扫一扫       | [`screens/qr_scanner.py`](screens/qr_scanner.py)     | 相机扫码、相册识别、用户名片校验及扫码结果展示                             |
+| 个人中心     | [`screens/mypage.py`](screens/mypage.py)、[`screens/account_pages.py`](screens/account_pages.py) | 独立的通知、档案、收藏、订单、反馈与客服页面；个人二维码和通讯录 |
 
 **免费额度策略**：免费用户每天可识别 **3 次**，VIP 用户不限次数，额度由 [`database/user_db.py`](database/user_db.py) 按日期计数控制。
 
@@ -127,6 +136,7 @@ PlantDoctor/
 │   ├── classes.json         # 181 个类别英文名列表
 │   ├── class_list.txt       # 类别清单与样本数量统计
 │   ├── disease_info.json    # 病虫害中文名、简介、防治方法详情库
+│   ├── disease_metadata.json # 181 类经核对的别名、分布与资料来源
 │   ├── train.py             # 训练脚本（ConvNeXt + 迁移学习 + 断点续训）
 │   ├── preprocess_data.py   # 数据预处理：统一尺寸、清洗、按 8:2 划分 train/val
 │   └── download_data.py     # 下载 PlantVillage 数据集
@@ -139,12 +149,15 @@ PlantDoctor/
 ├── screens/                 # 页面层（每个页面一个 Screen 类）
 │   ├── auth.py              #   登录 / 注册
 │   ├── home.py              #   首页（天气、提醒、工具）
+│   ├── search_results.py    #   跨模块关键词搜索结果与详情跳转
 │   ├── camera.py            #   相机取景与识别结果页
 │   ├── community.py         #   社区列表与帖子详情
 │   ├── store.py             #   商城首页、分类、农药详情
 │   ├── encyclopedia.py      #   百科列表与词条详情
 │   ├── farming_plan.py      #   农事计划
-│   ├── mypage.py            #   个人中心、收藏、订单
+│   ├── mypage.py            #   个人中心入口、个人二维码与通讯录
+│   ├── account_pages.py     #   通知、档案、收藏、订单、反馈与客服完整页面
+│   ├── qr_scanner.py        #   二维码扫描、图片解析与用户名片校验
 │   └── misc.py              #   病虫害分布图
 │
 ├── widgets/                 # 通用 UI 组件
@@ -193,7 +206,7 @@ PlantDoctor/
 | Python            | **3.11.x**（推荐，与打包环境一致；3.12/3.13 亦可运行开发模式）                               |
 | pip               | ≥ 23.0（随 Python 自带，建议 `python -m pip install -U pip`）                                |
 | 磁盘空间          | 客户端约 200MB；服务端含 PyTorch 与模型权重约 2.5GB                                          |
-| 网络              | 客户端与服务端必须处于**同一局域网（同一 WiFi）**；天气功能需访问公网                        |
+| 网络              | 客户端与服务端须处于**同一局域网（同一 WiFi）**；天气与在线地图功能需访问公网                |
 | Android（仅打包） | JDK 17、Android SDK（target API 33 / min API 24）、NDK 25b、Buildozer                        |
 | 硬件              | 模型仅 CPU 推理，**无需显卡**；摄像头（拍照功能）                                            |
 
@@ -433,13 +446,15 @@ buildozer -v android debug
 
 ![个人中心](UI/8.jpg)
 
-头像、昵称与签名维护，我的档案、我的订单、我的反馈、客服服务等入口，以及关注 / 粉丝 / 分享统计。
+头像、昵称与签名维护，以及关注 / 粉丝 / 分享统计。通知、我的档案、我的收藏、我的订单、我的反馈和客服服务均为独立页面；档案支持保存性别、电话、生日、地区和主要作物。二维码依据用户编号与账号生成，每个用户不同且不包含密码；通讯录使用项目内真实人物照片。
 
 ### 病虫害分布图
 
 ![病虫害分布图](UI/9.png)
 
-以地图形式展示区域虫情上报点，辅助判断周边病虫害发生趋势。
+使用真实在线街道瓦片展示广州市全域地图，可通过鼠标左键或触摸手势上下左右自由拖动，并可一键回到广州。地图内置广州 11 个行政区的位置参考点，标记标签会自动错位避让并以连线指向实际坐标；用户还可添加带 WGS84 经纬度的现场观察点。“分布数据”页逐条列出行政区参考点和真实用户上报，二者采用不同颜色与数据类型，避免把行政区位置误解为病虫害实况。地图瓦片按视窗并行加载并缓存到 `photos/map_tiles/`，首次打开需要联网。
+
+行政区列表以[广州市人民政府行政区划](https://www.gz.gov.cn/zlgz/gzgk/xzqy/content/post_10729033.html)为依据。行政区参考点仅用于地图定位，不代表当地发生病虫害；用户上报也不等同于官方植保预警。
 
 ### 专家咨询（设计稿）
 
@@ -622,7 +637,7 @@ ConvNeXt + ImageNet-1K 迁移学习；交叉熵上叠加参数偏移 L2 正则�
 
 ### 推理流程（`ai_model/api.py`）
 
-Resize(256) + CenterCrop(224) + ImageNet 归一化 → 原图/水平翻转/垂直翻转/双向翻转 4 个变体分别推理 → 按类别合并概率取平均 → 取 Top-5 → 经 `disease_info.json` 与内置 `ALIASES` 映射中文名与防治方案。
+Resize(256) + CenterCrop(224) + ImageNet 归一化 → 原图/水平翻转/垂直翻转/双向翻转 4 个变体分别推理 → 按类别合并概率取平均 → 取 Top-5 → 经 `disease_info.json`、`disease_metadata.json` 与内置 `ALIASES` 映射中文名、别名、分布与防治方案。
 
 ### 复现训练
 
@@ -644,6 +659,7 @@ python train.py              # 训练并导出 pest_model.pth / classes.json
 | `store_favorites`      | 商品收藏（用户名 + 商品 ID 联合主键）                        |
 | `store_comments`       | 商品评论                                                     |
 | `store_orders`         | 订单                                                         |
+| `user_feedback`        | 用户反馈类型、标题、内容、联系方式、状态与提交时间           |
 | `community_likes`      | 帖子点赞去重                                                 |
 | `community_post_stats` | 帖子浏览量                                                   |
 | `community_comments`   | 帖子评论                                                     |

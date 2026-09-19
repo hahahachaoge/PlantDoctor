@@ -81,15 +81,58 @@ class StoreDatabase:
                     delivery_date TEXT NOT NULL, created_at TEXT NOT NULL
                 )""")
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL, category TEXT NOT NULL,
+                    title TEXT NOT NULL, content TEXT NOT NULL,
+                    contact TEXT DEFAULT '', status TEXT DEFAULT '已提交',
+                    created_at TEXT NOT NULL
+                )""")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS qr_scan_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL, content TEXT NOT NULL,
+                    content_type TEXT NOT NULL, summary TEXT NOT NULL,
+                    source TEXT DEFAULT '相机', created_at TEXT NOT NULL
+                )""")
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS pest_entries (
                     id INTEGER PRIMARY KEY, name TEXT NOT NULL,
-                    intro TEXT NOT NULL, treatment TEXT NOT NULL
+                    intro TEXT NOT NULL, treatment TEXT NOT NULL,
+                    crop TEXT DEFAULT '', en_name TEXT DEFAULT ''
                 )""")
+            pest_columns = {
+                row["name"] for row in conn.execute(
+                    "PRAGMA table_info(pest_entries)"
+                ).fetchall()
+            }
+            for column in ("crop", "en_name"):
+                if column not in pest_columns:
+                    conn.execute(
+                        f"ALTER TABLE pest_entries ADD COLUMN {column} TEXT DEFAULT ''"
+                    )
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_pest_reports (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT,
-                    pest_name TEXT, latitude REAL, longitude REAL, created_at TEXT
+                    pest_name TEXT, latitude REAL, longitude REAL, created_at TEXT,
+                    crop TEXT DEFAULT '', severity TEXT DEFAULT '中',
+                    note TEXT DEFAULT '', source_type TEXT DEFAULT '用户上报'
                 )""")
+            report_columns = {
+                row["name"] for row in conn.execute(
+                    "PRAGMA table_info(user_pest_reports)"
+                ).fetchall()
+            }
+            for column, definition in {
+                "crop": "TEXT DEFAULT ''",
+                "severity": "TEXT DEFAULT '中'",
+                "note": "TEXT DEFAULT ''",
+                "source_type": "TEXT DEFAULT '用户上报'",
+            }.items():
+                if column not in report_columns:
+                    conn.execute(
+                        f"ALTER TABLE user_pest_reports ADD COLUMN {column} {definition}"
+                    )
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS app_meta (
                     meta_key TEXT PRIMARY KEY, meta_value TEXT
@@ -111,14 +154,23 @@ class StoreDatabase:
                         :stock, :image, :description, :is_hot, :is_featured
                     )""", STORE_PRODUCTS_SEED)
                 conn.executemany(
-                    "INSERT INTO pest_entries (id, name, intro, treatment) VALUES (:id, :name, :intro, :treatment)",
-                    ALL_PEST_ENTRIES,
+                    """INSERT INTO pest_entries
+                       (id, name, intro, treatment, crop, en_name)
+                       VALUES (:id, :name, :intro, :treatment, :crop, :en_name)""",
+                    [dict(entry, crop=entry.get("crop", ""),
+                          en_name=entry.get("en_name", ""))
+                     for entry in ALL_PEST_ENTRIES],
                 )
                 conn.execute(
                     "INSERT OR REPLACE INTO app_meta (meta_key, meta_value) VALUES ('store_catalog_version', ?)",
                     (STORE_CATALOG_VERSION,),
                 )
             conn.execute("UPDATE store_products SET sold_count = 0")
+            for entry in ALL_PEST_ENTRIES:
+                conn.execute(
+                    "UPDATE pest_entries SET crop = ?, en_name = ? WHERE id = ?",
+                    (entry.get("crop", ""), entry.get("en_name", ""), entry["id"]),
+                )
             conn.execute("UPDATE store_products SET category = '精选好物', sub_category = '精选' WHERE id IN (2001, 2002, 2003, 2004, 2005)")
             conn.execute("UPDATE store_products SET category = '热销榜单', sub_category = '热销' WHERE id IN (2101, 2102, 2103, 2104, 2105)")
             conn.execute("UPDATE store_products SET category = '肥料', sub_category = '肥料' WHERE id IN (2201, 2202, 2203, 2204, 2205, 2206)")
@@ -188,6 +240,30 @@ class StoreDatabase:
             ).fetchone()
             row = self._canonicalize_row(conn, row)
         return self._row_to_product(row) if row else None
+
+    def search_products(self, keyword, limit=30):
+        """Search the real product catalogue across user-visible fields."""
+        pattern = f"%{(keyword or '').strip()}%"
+        if pattern == "%%":
+            return []
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM store_products
+                   WHERE name LIKE ? OR category LIKE ? OR sub_category LIKE ?
+                      OR specification LIKE ? OR description LIKE ?
+                   ORDER BY sold_count DESC, id LIMIT ?""",
+                (pattern, pattern, pattern, pattern, pattern, int(limit)),
+            ).fetchall()
+            seen = set()
+            products = []
+            for row in rows:
+                product = self._row_to_product(self._canonicalize_row(conn, row))
+                key = self._normalize_product_name(product["name"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                products.append(product)
+        return products
 
     def increment_sold_count(self, product_id):
         with self._connect() as conn:
@@ -286,6 +362,66 @@ class StoreDatabase:
                 seen.add(key)
                 products.append(product)
         return products
+
+    def remove_favorite(self, username, product_id):
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM store_favorites WHERE username = ? AND product_id = ?",
+                (username, int(product_id)),
+            )
+            conn.commit()
+
+    def add_feedback(self, username, category, title, content, contact=""):
+        created_at = datetime.now().isoformat(timespec="seconds")
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """INSERT INTO user_feedback
+                   (username, category, title, content, contact, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, '已提交', ?)""",
+                (username, category, title, content, contact, created_at),
+            )
+            conn.commit()
+            feedback_id = cursor.lastrowid
+        return feedback_id
+
+    def get_feedback(self, username, limit=50):
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM user_feedback WHERE username = ?
+                   ORDER BY created_at DESC, id DESC LIMIT ?""",
+                (username, int(limit)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_qr_scan(self, username, content, content_type, summary, source="相机"):
+        created_at = datetime.now().isoformat(timespec="seconds")
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """INSERT INTO qr_scan_history
+                   (username, content, content_type, summary, source, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (username or "游客", content, content_type, summary, source, created_at),
+            )
+            conn.commit()
+            scan_id = cursor.lastrowid
+        return scan_id
+
+    def get_qr_scans(self, username, limit=20):
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM qr_scan_history WHERE username = ?
+                   ORDER BY created_at DESC, id DESC LIMIT ?""",
+                (username or "游客", int(limit)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def clear_qr_scans(self, username):
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM qr_scan_history WHERE username = ?",
+                (username or "游客",),
+            )
+            conn.commit()
 
     def get_products_by_ids(self, product_ids):
         if not product_ids:
@@ -459,6 +595,41 @@ class StoreDatabase:
             row = conn.execute("SELECT * FROM pest_entries WHERE id = ?", (pest_id,)).fetchone()
         return dict(row) if row else None
 
+    def add_pest_report(self, username, pest_name, latitude, longitude,
+                        crop="", severity="中", note=""):
+        """保存用户主动提交的、带真实经纬度的病虫害观察记录。"""
+        created_at = datetime.now().isoformat(timespec="seconds")
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """INSERT INTO user_pest_reports (
+                       username, pest_name, latitude, longitude, created_at,
+                       crop, severity, note, source_type
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '用户上报')""",
+                (username or "游客", pest_name, float(latitude), float(longitude),
+                 created_at, crop, severity, note),
+            )
+            conn.commit()
+            report_id = cursor.lastrowid
+        return self.get_pest_report(report_id)
+
+    def get_pest_report(self, report_id):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM user_pest_reports WHERE id = ?", (report_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_pest_reports(self, limit=300):
+        """按时间倒序返回地图上报点，避免无边界加载拖慢地图。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM user_pest_reports
+                   WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                   ORDER BY created_at DESC, id DESC LIMIT ?""",
+                (int(limit),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_pesticide_entries(self):
         return PESTICIDE_ENTRIES
 
@@ -515,4 +686,3 @@ class StoreDatabase:
 
 
 STORE_DB = StoreDatabase()
-
