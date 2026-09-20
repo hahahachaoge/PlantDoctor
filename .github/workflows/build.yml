@@ -50,15 +50,15 @@ jobs:
           tail -n 200 buildozer.log >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-          command_line="$(grep -n '^# Command failed' buildozer.log | tail -n 1 | cut -d: -f1)"
+          sed -E $'s/\x1B\[[0-9;]*[mK]//g' buildozer.log > buildozer-clean.log
+          command_line="$(grep -n 'Command failed:' buildozer-clean.log | tail -n 1 | cut -d: -f1 || true)"
           if [[ -n "$command_line" ]]; then
-            start_line=$(( command_line > 60 ? command_line - 60 : 1 ))
-            diagnostic="$(sed -n "${start_line},${command_line}p" buildozer.log)"
+            start_line=$(( command_line > 80 ? command_line - 80 : 1 ))
+            diagnostic="$(sed -n "${start_line},${command_line}p" buildozer-clean.log)"
           else
-            diagnostic="$(tail -n 60 buildozer.log)"
+            diagnostic="$(tail -n 80 buildozer-clean.log)"
           fi
 
-          diagnostic="$(printf '%s' "$diagnostic" | sed -E $'s/\\x1B\\[[0-9;]*[mK]//g')"
           diagnostic="${diagnostic//'%'/'%25'}"
           diagnostic="${diagnostic//$'\r'/'%0D'}"
           diagnostic="${diagnostic//$'\n'/'%0A'}"
