@@ -8,14 +8,14 @@ source.exclude_exts = spec,pyc,pyo,pyd,log,md
 source.exclude_dirs = .git,.idea,.venv,venv,__pycache__,bin,tests,ai_model,data
 source.exclude_patterns = .buildozer/*,photos/*,ai_model/*.pth,ai_model/data/*,*.git/*,*.DS_Store
 version = 1.0.0
-requirements = python3==3.11.9,kivy==2.3.0,requests,charset_normalizer,idna,urllib3,certifi,pyjnius,android,pillow,qrcode,numpy==2.3.3,opencv
+requirements = hostpython3==3.11.9,python3==3.11.9,kivy==2.3.0,requests,charset_normalizer,idna,urllib3,certifi,pyjnius,android,pillow,qrcode,numpy==2.3.3,opencv
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,CAMERA,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES
 android.features = android.hardware.camera,android.hardware.camera.autofocus
 android.api = 33
 android.minapi = 24
-android.ndk = 25b
+android.ndk = 28c
 android.ndk_api = 24
 android.accept_sdk_license = True
 android.private_storage = True
