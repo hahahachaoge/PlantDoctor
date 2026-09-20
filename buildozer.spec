@@ -8,7 +8,7 @@ source.exclude_exts = spec,pyc,pyo,pyd,log,md
 source.exclude_dirs = .git,.idea,.venv,venv,__pycache__,bin,tests,ai_model,data
 source.exclude_patterns = .buildozer/*,photos/*,ai_model/*.pth,ai_model/data/*,*.git/*,*.DS_Store
 version = 1.0.0
-requirements = hostpython3==3.11.9,python3==3.11.9,kivy==2.3.0,requests,charset_normalizer,idna,urllib3,certifi,pyjnius,android,pillow,qrcode,numpy,opencv
+requirements = hostpython3==3.11.9,python3==3.11.9,kivy==2.3.1,requests,charset_normalizer,idna,urllib3,certifi,pyjnius,android,pillow,qrcode,numpy,opencv
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,CAMERA,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES
