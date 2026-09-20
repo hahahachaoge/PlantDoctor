@@ -8,7 +8,7 @@ source.exclude_exts = spec,pyc,pyo,pyd,log,md
 source.exclude_dirs = .git,.idea,.venv,venv,__pycache__,bin,tests,ai_model,data
 source.exclude_patterns = .buildozer/*,photos/*,ai_model/*.pth,ai_model/data/*,*.git/*,*.DS_Store
 version = 1.0.0
-requirements = hostpython3==3.11.9,python3==3.11.9,kivy==2.3.0,requests,charset_normalizer,idna,urllib3,certifi,pyjnius,android,pillow,qrcode,numpy==2.3.3,opencv
+requirements = hostpython3==3.11.9,python3==3.11.9,kivy==2.3.0,requests,charset_normalizer,idna,urllib3,certifi,pyjnius,android,pillow,qrcode,numpy,opencv
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,CAMERA,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES
@@ -30,7 +30,7 @@ android.logcat_filters = *:S python:D PythonActivity:D
 android.extra_manifest_application_arguments = src/android/extra_manifest_application_arguments.xml
 android.extra_manifest_xml = src/android/extra_manifest.xml
 android.add_src = src/android
-p4a.local_recipes = 
+p4a.local_recipes = p4a-recipes
 p4a.bootstrap = sdl2
 [buildozer]
 log_level = 2
