@@ -35,10 +35,6 @@ best_model.zip
 ai_model/data/
 ai_model/checkpoints/
 
-# Excluded by request
-ai_model/api.py
-ai_model/api.cpython-*.pyc*
-
 # Local scratch / personal notes
 .gitignore.txt
 api_url,.txt

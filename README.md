@@ -171,7 +171,7 @@ PlantDoctor/
 └── UI/                      # 界面设计稿（README 功能演示引用）
 ```
 
-> \* `ai_model/api.py` 依原作者要求不纳入公开仓库（见 [.gitignore](.gitignore)）；下文 [3.3 节](#33-启动识别服务端)给出的是其运行方式与接口契约，可据此实现等价服务。模型权重 `pest_model.pth` 因体积超过 GitHub 单文件 100MB 限制，同样不纳入 Git。
+> `ai_model/api.py` 已纳入仓库，可直接启动本地识别服务。模型权重 `pest_model.pth` 因体积超过 GitHub 单文件 100MB 限制，不纳入 Git，需要单独放入 `ai_model/` 目录。
 
 ### 2.2 关键目录与文件
 
