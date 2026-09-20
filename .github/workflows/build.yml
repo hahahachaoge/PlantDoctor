@@ -34,10 +34,39 @@ jobs:
           python -m pip install "cython==0.29.34" "buildozer==1.5.0"
 
       - name: Build debug APK
+        id: build_apk
+        shell: bash
         run: |
-          buildozer -v android debug
+          set -o pipefail
+          buildozer -v android debug 2>&1 | tee buildozer.log
+
+      - name: Report Buildozer failure
+        if: failure() && steps.build_apk.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "### Buildozer failure summary" >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 200 buildozer.log >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          grep -Eai "error:|fatal:|failed|failure|exception|traceback|not found|no matching" \
+            buildozer.log | tail -n 30 | while IFS= read -r line; do
+              line="${line//'%'/'%25'}"
+              line="${line//$'\r'/'%0D'}"
+              line="${line//$'\n'/'%0A'}"
+              echo "::error title=Buildozer::$line"
+            done
+
+      - name: Upload Buildozer log on failure
+        if: failure() && steps.build_apk.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: buildozer-failure-log
+          path: buildozer.log
+          retention-days: 7
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v7
         with:
           name: plantdoctor-apk
