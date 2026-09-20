@@ -26,8 +26,6 @@ android.debug_artifact = apk
 android.manifest.orientation = portrait
 android.copy_libs = 1
 android.logcat_filters = *:S python:D PythonActivity:D
-android.extra_manifest_application_arguments = src/android/extra_manifest_application_arguments.xml
-android.add_src = src/android
 p4a.local_recipes = p4a-recipes
 p4a.bootstrap = sdl2
 [buildozer]

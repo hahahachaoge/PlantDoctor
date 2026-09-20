@@ -164,7 +164,6 @@ PlantDoctor/
 │   ├── base_widgets.py      # RoundedButton / CircleImage / IconButton / ToolCard …
 │   └── product_widgets.py   # 商品列表行与商品横向滚动列表
 │
-├── src/android/             # Android 清单与 FileProvider 配置（Buildozer 引用）
 ├── image/                   # 应用图片资源（病虫害、农药、图标、文章配图）
 ├── avatars/                 # 内置头像资源
 ├── photos/                  # 运行时拍照/裁剪产物（仅保留 .keep）
