@@ -51,13 +51,10 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
           sed -E $'s/\x1B\[[0-9;]*[mK]//g' buildozer.log > buildozer-clean.log
-          command_line="$(grep -n 'Command failed:' buildozer-clean.log | tail -n 1 | cut -d: -f1 || true)"
-          if [[ -n "$command_line" ]]; then
-            start_line=$(( command_line > 80 ? command_line - 80 : 1 ))
-            diagnostic="$(sed -n "${start_line},${command_line}p" buildozer-clean.log)"
-          else
-            diagnostic="$(tail -n 80 buildozer-clean.log)"
-          fi
+          activity="$(grep -inE '(recipe|building|compiling|linking)' buildozer-clean.log | tail -n 25 || true)"
+          errors="$(grep -inE '(^|[^[:alpha:]])(fatal )?error:|ErrorReturnCode|FAILED:' buildozer-clean.log | tail -n 50 || true)"
+          command="$(grep -iE 'Command failed:|RAN:' buildozer-clean.log | tail -n 5 || true)"
+          diagnostic="ACTIVITY:\n${activity}\n\nERRORS:\n${errors}\n\nFAILED COMMAND:\n${command}"
 
           diagnostic="${diagnostic//'%'/'%25'}"
           diagnostic="${diagnostic//$'\r'/'%0D'}"
