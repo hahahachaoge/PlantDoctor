@@ -44,18 +44,17 @@ jobs:
         if: failure() && steps.build_apk.outcome == 'failure'
         shell: bash
         run: |
+          df -h
           echo "### Buildozer failure summary" >> "$GITHUB_STEP_SUMMARY"
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
           tail -n 200 buildozer.log >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-          grep -Eai "error:|fatal:|failed|failure|exception|traceback|not found|no matching" \
-            buildozer.log | tail -n 30 | while IFS= read -r line; do
-              line="${line//'%'/'%25'}"
-              line="${line//$'\r'/'%0D'}"
-              line="${line//$'\n'/'%0A'}"
-              echo "::error title=Buildozer::$line"
-            done
+          tail_text="$(tail -n 120 buildozer.log)"
+          tail_text="${tail_text//'%'/'%25'}"
+          tail_text="${tail_text//$'\r'/'%0D'}"
+          tail_text="${tail_text//$'\n'/'%0A'}"
+          echo "::error title=Buildozer final output::$tail_text"
 
       - name: Upload Buildozer log on failure
         if: failure() && steps.build_apk.outcome == 'failure'
