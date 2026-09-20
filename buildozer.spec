@@ -12,7 +12,6 @@ requirements = hostpython3==3.11.9,python3==3.11.9,kivy==2.3.1,requests,charset_
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,CAMERA,READ_EXTERNAL_STORAGE,READ_MEDIA_IMAGES
-android.features = android.hardware.camera,android.hardware.camera.autofocus
 android.api = 33
 android.minapi = 24
 android.ndk = 28c
