@@ -50,11 +50,19 @@ jobs:
           tail -n 200 buildozer.log >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-          tail_text="$(tail -n 120 buildozer.log)"
-          tail_text="${tail_text//'%'/'%25'}"
-          tail_text="${tail_text//$'\r'/'%0D'}"
-          tail_text="${tail_text//$'\n'/'%0A'}"
-          echo "::error title=Buildozer final output::$tail_text"
+          command_line="$(grep -n '^# Command failed' buildozer.log | tail -n 1 | cut -d: -f1)"
+          if [[ -n "$command_line" ]]; then
+            start_line=$(( command_line > 60 ? command_line - 60 : 1 ))
+            diagnostic="$(sed -n "${start_line},${command_line}p" buildozer.log)"
+          else
+            diagnostic="$(tail -n 60 buildozer.log)"
+          fi
+
+          diagnostic="$(printf '%s' "$diagnostic" | sed -E $'s/\\x1B\\[[0-9;]*[mK]//g')"
+          diagnostic="${diagnostic//'%'/'%25'}"
+          diagnostic="${diagnostic//$'\r'/'%0D'}"
+          diagnostic="${diagnostic//$'\n'/'%0A'}"
+          echo "::error title=Buildozer command failure::$diagnostic"
 
       - name: Upload Buildozer log on failure
         if: failure() && steps.build_apk.outcome == 'failure'
