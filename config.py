@@ -9,7 +9,7 @@ else:
     # 开发时的源码路径
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-API_BASE_URL = os.environ.get("PLANT_API_URL", "http://192.168.0.101:8000")
+API_BASE_URL = os.environ.get("PLANT_API_URL", "http://10.253.25.202:8000")
 GREEN = (0.12, 0.58, 0.30, 1)
 STORE_DB_PATH = os.path.join(_BASE_DIR, "smart_agri.db")
 AVATAR_DIR = os.path.join(_BASE_DIR, "avatars")
