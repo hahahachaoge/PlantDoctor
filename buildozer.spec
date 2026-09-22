@@ -25,6 +25,7 @@ android.presplash_color = #2E7D32
 android.release_artifact = apk
 android.debug_artifact = apk
 android.manifest.orientation = portrait
+android.extra_manifest_application_arguments = %(source.dir)s/android/manifest_application_arguments.xml
 android.copy_libs = 1
 android.logcat_filters = *:S python:D PythonActivity:D
 p4a.local_recipes = p4a-recipes

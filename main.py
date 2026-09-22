@@ -45,11 +45,15 @@ from screens.search_results import SearchResultsScreen
 
 
 register_chinese_font()
-# 修复 Kivy 2.3.0 + OpenCV 5.x 下相机预览报错刷屏（详见 utils.patch_opencv_camera）
-try:
-    patch_opencv_camera()
-except Exception:
-    pass
+# This compatibility patch targets Kivy's desktop OpenCV provider.  Importing
+# cv2 while Android is still creating the SDL surface eagerly loads the whole
+# native OpenCV stack and can race the Android 16 window/splash transition.
+# Android initializes its camera provider lazily when the camera page opens.
+if not is_android():
+    try:
+        patch_opencv_camera()
+    except Exception:
+        pass
 Window.softinput_mode = "below_target"
 if not is_android():
     Window.size = (360, 800)
