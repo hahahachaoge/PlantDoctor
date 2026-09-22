@@ -18,7 +18,6 @@ from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
-from sympy.codegen.ast import none
 
 from config import GREEN, HOME_REMINDERS, IMAGE_DIR
 from database.store_db import STORE_DB
