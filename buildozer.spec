@@ -1,6 +1,6 @@
 [app]
 title = 农智云警
-icon.filename = %(source.dir)s/image/logo1.png
+icon.filename = %(source.dir)s/image/logo2.png
 package.name = plantdoctor
 package.domain = com.plantdoctor
 source.dir = .
