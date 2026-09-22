@@ -1,5 +1,6 @@
 [app]
-title = Plant Doctor
+title = Å©ÖÇÔÆ¾¯
+icon.filename = %(source.dir)s/image/logo1.png
 package.name = plantdoctor
 package.domain = com.plantdoctor
 source.dir = .
