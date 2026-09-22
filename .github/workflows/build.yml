@@ -31,7 +31,10 @@ jobs:
             libncurses5-dev libncursesw5-dev libtinfo6 cmake \
             libffi-dev libltdl-dev libssl-dev gettext build-essential ccache
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install "cython==0.29.34" "buildozer==1.5.0"
+          python -m pip install "cython==0.29.34"
+          # Buildozer 1.5.0 wraps extra Manifest application attributes in
+          # literal quotes, producing invalid XML. Pin the upstream fix.
+          python -m pip install "buildozer @ git+https://github.com/kivy/buildozer.git@a153097b3c534bea8a17da2abf1369d67c8cbfcb"
 
       - name: Build debug APK
         id: build_apk
