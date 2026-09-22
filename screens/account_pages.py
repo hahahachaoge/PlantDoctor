@@ -510,9 +510,9 @@ class ProfileScreen(AccountPage):
         if hasattr(app, "show_capture_menu"):
             app.show_capture_menu(after_action=self._save_avatar)
 
-    def _save_avatar(self, image_path):
+    def _save_avatar(self, _mode, image_path=None):
         user = _current_user()
-        if not user:
+        if not user or not image_path or not os.path.exists(image_path):
             return
         saved = save_avatar_image(image_path, user["username"])
         USER_DB.update_avatar(user["username"], saved)

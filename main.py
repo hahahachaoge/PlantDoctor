@@ -15,7 +15,6 @@ from kivy.metrics import dp
 from kivy.properties import ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.label import Label
 from kivy.uix.modalview import ModalView
 from kivy.uix.screenmanager import ScreenManager
@@ -60,12 +59,26 @@ if not is_android():
 
 
 class MyApp(App):
+    ANDROID_IMAGE_PICK_REQUEST = 0x5044
     previous_before_camera = "home"
     current_user = None
     camera_mode = "recognize"
     # KivyMD 控件（MDDatePicker 等）通过 app.theme_cls 取主题，这里单独挂一个，
     # 主 App 仍然继承 kivy.app.App 以保持原有结构不变。
     theme_cls = ObjectProperty()
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._android_image_after_action = None
+        self._android_image_result_handler = None
+        self._android_image_result_bound = False
+        self._android_image_picker_active = False
+        self._pending_camera_after_action = None
+
+    def on_pause(self):
+        # The system photo picker temporarily backgrounds the SDL activity.
+        # Returning True keeps Kivy alive until Android delivers its result.
+        return True
 
     def build(self):
         import traceback
@@ -185,6 +198,21 @@ class MyApp(App):
         register_screen._show_selected_avatar()
         self.root.current = "register"
 
+    def handle_camera_callback(self, image_path):
+        callback = self._pending_camera_after_action
+        self._pending_camera_after_action = None
+        self.camera_mode = "recognize"
+        return_screen = self.previous_before_camera or "home"
+        if self.root and self.root.has_screen(return_screen):
+            self.root.current = return_screen
+        if callable(callback):
+            try:
+                callback("camera", image_path)
+            except Exception as exc:
+                import traceback
+                traceback.print_exc()
+                show_toast(f"处理照片失败: {exc}")
+
     def open_qr_scanner(self, return_screen=None):
         scanner = self.root.get_screen("qr_scanner")
         scanner.return_screen = return_screen or self.root.current or "home"
@@ -234,12 +262,14 @@ class MyApp(App):
         if is_android() and not is_android_permission_granted("android.permission.CAMERA"):
             show_toast("相机使用失败")
             return
-        self.camera_mode = "recognize"
-        if callable(after_action):
-            after_action("camera")
-            return
         if self.root.current != "result":
             self.previous_before_camera = self.root.current
+        if callable(after_action):
+            self._pending_camera_after_action = after_action
+            self.camera_mode = "callback"
+        else:
+            self._pending_camera_after_action = None
+            self.camera_mode = "recognize"
         self.root.current = "camera"
 
     def _open_photo_from_menu(self, popup, after_action=None):
@@ -247,19 +277,186 @@ class MyApp(App):
             popup.dismiss()
 
         if is_android():
-            # Android：检查权限
-            if not (
-                    is_android_permission_granted("android.permission.READ_EXTERNAL_STORAGE")
-                    or is_android_permission_granted("android.permission.READ_MEDIA_IMAGES")
-            ):
-                show_toast("文件使用失败")
-                return
             self.camera_mode = "recognize"
-            self._open_photo_kivy_chooser(after_action)
+            # Scoped-storage Android versions must use the system document
+            # picker.  Scanning the private Python bundle with FileChooser can
+            # terminate SDL on Android 16.
+            Clock.schedule_once(
+                lambda dt, callback=after_action:
+                    self._open_android_image_picker(callback),
+                0.08,
+            )
         else:
             # Windows/PC：调用系统原生文件对话框
             self.camera_mode = "recognize"
             self._open_photo_native_dialog(after_action)
+
+    def _ensure_android_image_result_handler(self):
+        if self._android_image_result_bound:
+            return
+        activity_module = import_module("android.activity")
+        # Keep one stable bound-method object for the whole app lifetime.
+        self._android_image_result_handler = \
+            self._on_android_image_activity_result
+        activity_module.bind(
+            on_activity_result=self._android_image_result_handler)
+        self._android_image_result_bound = True
+
+    def _open_android_image_picker(self, after_action=None):
+        if self._android_image_picker_active:
+            show_toast("请先完成当前图片选择")
+            return
+        try:
+            autoclass = import_module("jnius").autoclass
+            self._ensure_android_image_result_handler()
+            Intent = autoclass("android.content.Intent")
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+
+            intent = Intent()
+            intent.setAction(Intent.ACTION_OPEN_DOCUMENT)
+            intent.addCategory(Intent.CATEGORY_OPENABLE)
+            intent.setType("image/*")
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+            self._android_image_after_action = after_action
+            self._android_image_picker_active = True
+            PythonActivity.mActivity.startActivityForResult(
+                intent, self.ANDROID_IMAGE_PICK_REQUEST)
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            self._android_image_picker_active = False
+            self._android_image_after_action = None
+            show_toast(f"打开系统相册失败: {exc}")
+
+    def _on_android_image_activity_result(
+            self, request_code, result_code, result_intent):
+        if int(request_code) != self.ANDROID_IMAGE_PICK_REQUEST:
+            return
+
+        self._android_image_picker_active = False
+        after_action = self._android_image_after_action
+        self._android_image_after_action = None
+        uri_text = None
+        try:
+            if int(result_code) == -1 and result_intent is not None:
+                uri = result_intent.getData()
+                if uri is not None:
+                    uri_text = str(uri.toString())
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+        # Do not retain Java local references after this callback returns.
+        Clock.schedule_once(
+            lambda dt, value=uri_text, callback=after_action:
+                self._consume_android_image_result(value, callback),
+            0,
+        )
+
+    def _consume_android_image_result(self, uri_text, after_action=None):
+        if not uri_text:  # The user cancelled the picker.
+            return
+
+        def copy_in_background():
+            try:
+                local_path = self._copy_android_uri_to_private(uri_text)
+            except Exception as exc:
+                import traceback
+                traceback.print_exc()
+                message = f"读取所选图片失败: {exc}"
+                Clock.schedule_once(
+                    lambda dt, text=message: show_toast(text), 0)
+                return
+            Clock.schedule_once(
+                lambda dt, path=local_path, callback=after_action:
+                    self._on_native_file_selected(path, callback),
+                0,
+            )
+
+        threading.Thread(target=copy_in_background, daemon=True).start()
+
+    def _copy_android_uri_to_private(self, uri_text):
+        """Copy a granted content URI into app-private storage in Java."""
+        import mimetypes
+        import uuid
+
+        autoclass = import_module("jnius").autoclass
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        Uri = autoclass("android.net.Uri")
+        FileOutputStream = autoclass("java.io.FileOutputStream")
+        Channels = autoclass("java.nio.channels.Channels")
+        BuildVersion = autoclass("android.os.Build$VERSION")
+
+        resolver = PythonActivity.mActivity.getContentResolver()
+        uri = Uri.parse(uri_text)
+        mime_type = str(resolver.getType(uri) or "").lower()
+        suffix = {
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "image/bmp": ".bmp",
+        }.get(mime_type)
+        if not suffix:
+            guessed_suffix = mimetypes.guess_extension(mime_type) \
+                if mime_type else None
+            allowed_suffixes = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+            suffix = guessed_suffix \
+                if guessed_suffix in allowed_suffixes else ".jpg"
+
+        import_dir = os.path.join(self.user_data_dir, "imports")
+        os.makedirs(import_dir, exist_ok=True)
+        final_path = os.path.join(import_dir, uuid.uuid4().hex + suffix)
+        partial_path = final_path + ".part"
+        source = None
+        output = None
+        source_channel = None
+        output_channel = None
+        copied = 0
+
+        try:
+            try:
+                source = resolver.openInputStream(uri)
+                if source is None:
+                    raise OSError("系统未返回可读取的图片流")
+                output = FileOutputStream(partial_path)
+
+                if int(BuildVersion.SDK_INT) >= 29:
+                    FileUtils = autoclass("android.os.FileUtils")
+                    copied = int(FileUtils.copy(source, output))
+                else:
+                    source_channel = Channels.newChannel(source)
+                    output_channel = output.getChannel()
+                    position = 0
+                    block_size = 16 * 1024 * 1024
+                    while True:
+                        moved = int(output_channel.transferFrom(
+                            source_channel, position, block_size))
+                        if moved <= 0:
+                            break
+                        position += moved
+                    copied = position
+                output.flush()
+            finally:
+                for closeable in (
+                        output_channel, source_channel, output, source):
+                    if closeable is not None:
+                        try:
+                            closeable.close()
+                        except Exception:
+                            pass
+
+            if copied <= 0:
+                raise OSError("所选图片为空")
+            os.replace(partial_path, final_path)
+            return final_path
+        except Exception:
+            try:
+                os.remove(partial_path)
+            except OSError:
+                pass
+            raise
 
     @staticmethod
     def _ask_image_path():
@@ -327,7 +524,12 @@ class MyApp(App):
         if self.root.current != "result":
             self.previous_before_camera = self.root.current
         if callable(after_action):
-            after_action("album", image_path)
+            try:
+                after_action("album", image_path)
+            except Exception as exc:
+                import traceback
+                traceback.print_exc()
+                show_toast(f"处理图片失败: {exc}")
             return
         self.recognize_image_from_file(image_path)
 
@@ -340,71 +542,6 @@ class MyApp(App):
             os.path.expanduser("~"),
         ]
         return next((p for p in candidates if os.path.isdir(p)), os.path.expanduser("~"))
-
-    def _open_photo_kivy_chooser(self, after_action=None):
-        """Android 端使用 Kivy 内置文件选择器"""
-        default_paths = [
-            os.path.join(os.path.expanduser("~"), "Pictures"),
-            os.path.join(os.path.expanduser("~"), "图片"),
-            os.path.expanduser("~"),
-        ]
-        start_path = next((p for p in default_paths if os.path.isdir(p)),
-                          os.path.expanduser("~"))
-
-        chooser_popup = Popup(title="", separator_height=0, size_hint=(0.92, 0.82))
-        wrapper = BoxLayout(orientation="vertical", spacing=dp(10), padding=dp(10))
-        with wrapper.canvas.before:
-            from kivy.graphics import Color, RoundedRectangle
-            Color(1, 1, 1, 1)
-            bg_rect = RoundedRectangle(pos=wrapper.pos, size=wrapper.size, radius=[dp(16)] * 4)
-        wrapper.bind(pos=lambda i, *_: _update_popup_rect(i, bg_rect),
-                     size=lambda i, *_: _update_popup_rect(i, bg_rect))
-
-        title_label = Label(
-            text="选择照片", font_size=dp(18), color=(1, 1, 1, 1),
-            size_hint=(1, None), height=dp(28),
-            halign="center", valign="middle", **text_style(),
-        )
-        title_label.bind(size=title_label.setter("text_size"))
-
-        chooser = FileChooserListView(
-            path=start_path,
-            filters=["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp"],
-        )
-
-        wrapper.add_widget(title_label)
-        wrapper.add_widget(chooser)
-
-        btn_row = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(10))
-        ok_btn = RoundedButton(text="确定", color=(1, 1, 1, 1), **text_style())
-        cancel_btn = RoundedButton(text="取消", color=(1, 1, 1, 1),
-                                   fill_color=(0.65, 0.65, 0.65, 1), **text_style())
-
-        def confirm_pick(_instance=None):
-            if not chooser.selection:
-                show_toast("请先选择一张照片")
-                return
-            image_path = chooser.selection[0]
-            chooser_popup.dismiss()
-            if callable(after_action):
-                after_action("album", image_path)
-                return
-            if self.root.current != "result":
-                self.previous_before_camera = self.root.current
-            self.recognize_image_from_file(image_path)
-
-        def on_submit(chooser_instance, selection, touch):
-            if selection:
-                confirm_pick()
-
-        chooser.bind(on_submit=on_submit)
-        ok_btn.bind(on_press=confirm_pick)
-        cancel_btn.bind(on_press=lambda *_: chooser_popup.dismiss())
-        btn_row.add_widget(ok_btn)
-        btn_row.add_widget(cancel_btn)
-        wrapper.add_widget(btn_row)
-        chooser_popup.content = wrapper
-        chooser_popup.open()
 
     # ---------------- 识别中的加载提示 ----------------
     def _show_loading(self, text="识别中，请稍候..."):
@@ -600,4 +737,5 @@ if __name__ == "__main__":
         MyApp().run()
     except Exception:
         traceback.print_exc()
-        input("按回车键退出")
+        if not is_android():
+            input("按回车键退出")

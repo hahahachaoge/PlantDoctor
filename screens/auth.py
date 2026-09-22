@@ -655,7 +655,7 @@ class RegisterScreen(Screen):
         self.avatar_link = UnderlineLabel(
             text="[u]点击选头像框[/u]", color=self.bright_green, font_size=sp(14),
             size_hint=(None, None), size=(dp(140), dp(28)),
-            pos_hint={"center_x": 0.5, "top": 0.73},
+            pos_hint={"center_x": 0.5, "top": 0.70},
             halign="center", valign="middle", **text_style(),
         )
         self.avatar_link.bind(size=self.avatar_link.setter("text_size"))

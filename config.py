@@ -18,6 +18,53 @@ DISEASE_INFO_PATH = os.path.join(_BASE_DIR, "ai_model", "disease_info.json")
 DISEASE_METADATA_PATH = os.path.join(_BASE_DIR, "ai_model", "disease_metadata.json")
 
 
+def _restore_p4a_unicode_asset_names(root_dir):
+    """Repair non-ASCII asset names mangled by the Android p4a unpacker.
+
+    The affected unpacker stores every UTF-8 byte ``b`` as ``U+FF00 + b``.
+    The files themselves are intact, but normal Unicode paths then cannot find
+    them.  Rename each affected entry once, before screens resolve image paths.
+    """
+    if not os.path.isdir(root_dir):
+        return
+
+    for current_dir, dir_names, file_names in os.walk(root_dir, topdown=False):
+        for old_name in file_names + dir_names:
+            raw_name = bytearray()
+            was_mangled = False
+            for char in old_name:
+                codepoint = ord(char)
+                if codepoint < 0x80:
+                    raw_name.append(codepoint)
+                elif 0xFF00 <= codepoint <= 0xFFFF:
+                    raw_name.append(codepoint & 0xFF)
+                    was_mangled = True
+                else:
+                    raw_name = None
+                    break
+
+            if not was_mangled or raw_name is None:
+                continue
+            try:
+                restored_name = raw_name.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            if not restored_name or restored_name == old_name:
+                continue
+
+            old_path = os.path.join(current_dir, old_name)
+            restored_path = os.path.join(current_dir, restored_name)
+            try:
+                if not os.path.exists(restored_path):
+                    os.rename(old_path, restored_path)
+            except OSError as exc:
+                print(f"[assets] Could not restore {old_name!r}: {exc}")
+
+
+_restore_p4a_unicode_asset_names(IMAGE_DIR)
+_restore_p4a_unicode_asset_names(AVATAR_DIR)
+
+
 
 
 # 首页「我的工具」图标（直接用用户提供的 UI 图标文件名）
@@ -513,5 +560,3 @@ def set_api_base_url(url):
             f.write(url.rstrip("/"))
     except Exception:
         pass
-
-

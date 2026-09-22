@@ -347,6 +347,11 @@ class CameraScreen(Screen):
         try:
             self.camera.export_to_png(image_path)
             app = App.get_running_app()
+            if getattr(app, "camera_mode", "recognize") == "callback":
+                app.handle_camera_callback(image_path)
+                self._show_status("")
+                self._finish_capture()
+                return
             if getattr(app, "camera_mode", "recognize") == "avatar":
                 app.handle_avatar_capture(image_path)
                 self._show_status("")
@@ -406,6 +411,9 @@ class CameraScreen(Screen):
 
     def go_back(self, _instance=None):
         app = App.get_running_app()
+        if getattr(app, "camera_mode", "recognize") == "callback":
+            app._pending_camera_after_action = None
+            app.camera_mode = "recognize"
         self.manager.current = app.previous_before_camera or "home"
 
 

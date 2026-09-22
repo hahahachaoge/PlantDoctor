@@ -225,7 +225,9 @@ class MyPageScreen(Screen):
         self.scroll = ScrollView(
             size_hint=(1, None), do_scroll_x=False,
         )
-        self.layout.add_widget(self.scroll)
+        # Keep the fixed green profile header above the scrolling layer.  On
+        # Android, overscroll is otherwise drawn over the avatar/header card.
+        self.layout.add_widget(self.scroll, index=len(self.layout.children))
         self.content_box = BoxLayout(
             orientation="vertical", spacing=dp(10),
             padding=(dp(12), dp(12), dp(12), dp(18)),

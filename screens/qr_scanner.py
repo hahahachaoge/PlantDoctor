@@ -16,7 +16,7 @@ from database.store_db import STORE_DB
 from screens.account_pages import (
     AccountPage, INK, MUTED, ORANGE, SOFT_GREEN, _current_user, _text,
 )
-from utils import is_android, show_toast, text_style
+from utils import show_toast, text_style
 from widgets.base_widgets import RoundedButton
 
 
@@ -90,10 +90,7 @@ class QRScannerScreen(AccountPage):
         if not app:
             return
         callback = lambda _mode, path: self.scan_image(path, source="相册")
-        if is_android():
-            app._open_photo_kivy_chooser(callback)
-        else:
-            app._open_photo_native_dialog(callback)
+        app._open_photo_from_menu(None, callback)
 
     def scan_image(self, image_path, source="相机"):
         if self._scanning:
