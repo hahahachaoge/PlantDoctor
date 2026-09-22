@@ -1,5 +1,5 @@
 [app]
-title = Å©ÖÇÔÆ¾¯
+title = å†œæ™ºäº‘è­¦
 icon.filename = %(source.dir)s/image/logo1.png
 package.name = plantdoctor
 package.domain = com.plantdoctor
