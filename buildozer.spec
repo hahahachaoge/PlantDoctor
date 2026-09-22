@@ -6,7 +6,7 @@ package.domain = com.plantdoctor
 source.dir = .
 source.include_exts = py,png,jpg,jpeg,kv,atlas,json,txt
 source.exclude_exts = spec,pyc,pyo,pyd,log,md
-source.exclude_dirs = .git,.idea,.venv,venv,__pycache__,bin,tests,ai_model,data
+source.exclude_dirs = .git,.idea,.venv,venv,__pycache__,bin,tests,ai_model,data,.p4a-source
 source.exclude_patterns = .buildozer/*,photos/*,ai_model/*.pth,ai_model/data/*,*.git/*,*.DS_Store
 version = 1.0.0
 requirements = hostpython3==3.11.9,python3==3.11.9,kivy==2.3.1,requests,charset_normalizer,idna,urllib3,certifi,pyjnius,android,pillow,qrcode,numpy,opencv
@@ -25,11 +25,11 @@ android.presplash_color = #2E7D32
 android.release_artifact = apk
 android.debug_artifact = apk
 android.manifest.orientation = portrait
-android.extra_manifest_application_arguments = %(source.dir)s/android/manifest_application_arguments.xml
 android.copy_libs = 1
 android.logcat_filters = *:S python:D PythonActivity:D
 p4a.local_recipes = p4a-recipes
 p4a.bootstrap = sdl2
+p4a.source_dir = %(source.dir)s/.p4a-source
 [buildozer]
 log_level = 2
 warn_on_root = 1

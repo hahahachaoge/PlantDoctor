@@ -36,6 +36,30 @@ jobs:
           # literal quotes, producing invalid XML. Pin the upstream fix.
           python -m pip install "buildozer @ git+https://github.com/kivy/buildozer.git@a153097b3c534bea8a17da2abf1369d67c8cbfcb"
 
+      - name: Prepare Android 16 compatible p4a
+        shell: bash
+        run: |
+          git clone https://github.com/kivy/python-for-android.git .p4a-source
+          git -C .p4a-source checkout 58d21141f17c889bf8585f5665921d72028f8831
+
+          match_count="$(grep -Rho 'android:hardwareAccelerated="true"' \
+            .p4a-source/pythonforandroid/bootstraps | wc -l)"
+          if [ "$match_count" -lt 1 ]; then
+            echo "::error::p4a SDL manifest hardware acceleration attribute was not found"
+            exit 1
+          fi
+
+          grep -RIl 'android:hardwareAccelerated="true"' \
+            .p4a-source/pythonforandroid/bootstraps \
+            | xargs sed -i 's/android:hardwareAccelerated="true"/android:hardwareAccelerated="false"/g'
+
+          if grep -Rq 'android:hardwareAccelerated="true"' \
+            .p4a-source/pythonforandroid/bootstraps; then
+            echo "::error::p4a manifest hardware acceleration patch was incomplete"
+            exit 1
+          fi
+          echo "Patched $match_count p4a manifest attribute(s) for Android 16/ColorOS."
+
       - name: Build debug APK
         id: build_apk
         shell: bash
