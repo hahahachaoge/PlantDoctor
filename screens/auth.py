@@ -1,9 +1,11 @@
 import os
 import random
+import time
 
 from kivy.app import App
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.core.window import Window
+from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp, sp
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -68,6 +70,92 @@ def _input_icon(filename, fallback_text, icon_size=dp(20)):
     )
     label.bind(size=label.setter("text_size"))
     return label
+
+
+class PasswordVisibilityButton(ButtonBehavior, FloatLayout):
+    """Image-backed password switch with a phone-friendly touch target."""
+
+    def __init__(self, target_input, **kwargs):
+        super().__init__(**kwargs)
+        self.target_input = target_input
+        self.hidden = bool(target_input.password)
+        self.visible_source = os.path.join(IMAGE_DIR, "密码可见.png")
+        self.hidden_source = os.path.join(IMAGE_DIR, "密码不可见.png")
+        self.icon = KivyImage(
+            size_hint=(None, None), size=(dp(34), dp(34)),
+            pos_hint={"center_x": 0.5, "center_y": 0.5},
+            allow_stretch=True, keep_ratio=True,
+        )
+        self.add_widget(self.icon)
+        self._sync_icon()
+
+    def _sync_icon(self):
+        source = self.hidden_source if self.hidden else self.visible_source
+        self.icon.source = source if os.path.exists(source) else ""
+        self.icon.reload()
+
+    def set_hidden(self, hidden):
+        self.hidden = bool(hidden)
+        self.target_input.password = self.hidden
+        self._sync_icon()
+
+    def on_release(self):
+        self.set_hidden(not self.hidden)
+        self.target_input.focus = True
+
+
+class CloseIconButton(ButtonBehavior, Widget):
+    """Font-independent close icon centered exactly in its touch target."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(pos=self._redraw, size=self._redraw, state=self._redraw)
+        Clock.schedule_once(self._redraw, 0)
+
+    def _redraw(self, *_args):
+        self.canvas.clear()
+        half = dp(6)
+        alpha = 0.90 if self.state == "down" else 0.72
+        with self.canvas:
+            Color(0.30, 0.40, 0.34, alpha)
+            Line(
+                points=(self.center_x - half, self.center_y - half,
+                        self.center_x + half, self.center_y + half),
+                width=dp(1.6), cap="round",
+            )
+            Line(
+                points=(self.center_x - half, self.center_y + half,
+                        self.center_x + half, self.center_y - half),
+                width=dp(1.6), cap="round",
+            )
+
+
+class SmsSuccessIcon(Widget):
+    """Small vector check used by the white SMS confirmation dialog."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(pos=self._redraw, size=self._redraw)
+        Clock.schedule_once(self._redraw, 0)
+
+    def _redraw(self, *_args):
+        self.canvas.clear()
+        diameter = min(dp(46), self.width, self.height)
+        left = self.center_x - diameter / 2
+        bottom = self.center_y - diameter / 2
+        with self.canvas:
+            Color(0.88, 0.97, 0.91, 1)
+            Ellipse(pos=(left, bottom), size=(diameter, diameter))
+            Color(0.12, 0.58, 0.30, 1)
+            Line(
+                points=(self.center_x - diameter * 0.20,
+                        self.center_y - diameter * 0.01,
+                        self.center_x - diameter * 0.05,
+                        self.center_y - diameter * 0.17,
+                        self.center_x + diameter * 0.23,
+                        self.center_y + diameter * 0.16),
+                width=dp(2.2), cap="round", joint="round",
+            )
 
 
 class LoginScreen(Screen):
@@ -216,8 +304,13 @@ class LoginScreen(Screen):
         )
         self.password_input.bind(focus=_handle_password_focus,
                                  text=_enforce_ascii_password)
+        self.password_eye = PasswordVisibilityButton(
+            self.password_input,
+            size_hint=(None, 1), width=dp(48),
+        )
         password_wrap.add_widget(lock_icon)
         password_wrap.add_widget(self.password_input)
+        password_wrap.add_widget(self.password_eye)
         self.layout.add_widget(password_wrap)
 
         # 短信快捷登录提示
@@ -386,6 +479,7 @@ class LoginScreen(Screen):
 
     def on_leave(self, *args):
         self.password_input.focus = False
+        self.password_eye.set_hidden(True)
         set_ascii_input_mode(False)
         self.username_input.text = ""
         self.password_input.text = ""
@@ -414,165 +508,284 @@ class LoginScreen(Screen):
         app.set_current_user(user)
         self.manager.current = "home"
 
-    def open_sms_login(self, _instance=None):
-        self._sms_code = str(random.randint(100000, 999999))
-        self._sms_phone = ""
-        self._send_countdown = 0
+    def _show_sms_code_sent(self, code, owner_popup, code_input):
+        """Show the locally generated demo code in a clean white dialog."""
+        previous = getattr(self, "_sms_success_popup", None)
+        if previous is not None:
+            try:
+                previous.dismiss()
+            except Exception:
+                pass
 
-        popup = ModalView(
-            size_hint=(0.88, None), height=dp(360),
-            overlay_color=(0, 0, 0, 0.35),
+        dialog = ModalView(
+            size_hint=(None, None),
+            width=max(dp(250), min(dp(310), Window.width - dp(48))),
+            height=dp(244),
+            auto_dismiss=False,
+            overlay_color=(0, 0, 0, 0.28),
             background="",
             background_color=(0, 0, 0, 0),
         )
+        self._sms_success_popup = dialog
+        card = BoxLayout(
+            orientation="vertical", spacing=dp(8),
+            padding=[dp(20), dp(16), dp(20), dp(16)],
+        )
+        with card.canvas.before:
+            Color(1, 1, 1, 1)
+            card_bg = RoundedRectangle(
+                pos=card.pos, size=card.size, radius=[dp(22)] * 4)
+        card.bind(
+            pos=lambda instance, *_: _update_popup_rect(instance, card_bg),
+            size=lambda instance, *_: _update_popup_rect(instance, card_bg),
+        )
+
+        card.add_widget(SmsSuccessIcon(size_hint=(1, None), height=dp(50)))
+        sent_title = Label(
+            text="验证码已发送", font_size=sp(18), bold=True,
+            color=(0.10, 0.18, 0.13, 1),
+            size_hint=(1, None), height=dp(34),
+            halign="center", valign="middle", **text_style(),
+        )
+        sent_title.bind(size=sent_title.setter("text_size"))
+        card.add_widget(sent_title)
+
+        code_box = BoxLayout(size_hint=(1, None), height=dp(48))
+        with code_box.canvas.before:
+            Color(0.92, 0.98, 0.94, 1)
+            code_bg = RoundedRectangle(
+                pos=code_box.pos, size=code_box.size, radius=[dp(14)] * 4)
+        code_box.bind(
+            pos=lambda instance, *_: setattr(code_bg, "pos", instance.pos),
+            size=lambda instance, *_: setattr(code_bg, "size", instance.size),
+        )
+        code_label = Label(
+            text=code, font_size=sp(25), bold=True,
+            color=(0.10, 0.50, 0.26, 1),
+            halign="center", valign="middle", **text_style(),
+        )
+        code_label.bind(size=code_label.setter("text_size"))
+        code_box.add_widget(code_label)
+        card.add_widget(code_box)
+
+        ok_btn = RoundedButton(
+            text="确定", color=(1, 1, 1, 1),
+            font_size=sp(16), bold=True,
+            fill_color=self.bright_green, radius=dp(15),
+            size_hint=(1, None), height=dp(46), **text_style(),
+        )
+        ok_btn.bind(on_release=lambda *_: dialog.dismiss())
+        card.add_widget(ok_btn)
+        dialog.add_widget(card)
+
+        def after_dismiss(*_args):
+            if getattr(self, "_sms_success_popup", None) is dialog:
+                self._sms_success_popup = None
+            if getattr(self, "_sms_popup", None) is owner_popup:
+                def focus_code(_dt):
+                    if getattr(self, "_sms_popup", None) is owner_popup:
+                        code_input.focus = True
+
+                Clock.schedule_once(focus_code, 0.05)
+
+        dialog.bind(on_dismiss=after_dismiss)
+        dialog.open()
+
+    def open_sms_login(self, _instance=None):
+        previous_popup = getattr(self, "_sms_popup", None)
+        if previous_popup is not None:
+            try:
+                previous_popup.dismiss()
+            except Exception:
+                pass
+        self._sms_code = str(random.randint(100000, 999999))
+        self._sms_phone = ""
+        countdown = {"event": None, "ends_at": 0.0}
+
+        popup = ModalView(
+            size_hint=(0.90, None),
+            height=max(dp(332), min(dp(336), Window.height - dp(24))),
+            overlay_color=(0, 0, 0, 0.42),
+            background="",
+            background_color=(0, 0, 0, 0),
+        )
+        self._sms_popup = popup
         content = BoxLayout(
             orientation="vertical",
-            spacing=dp(14),
-            padding=[dp(22), dp(24), dp(22), dp(22)],
+            spacing=dp(10),
+            padding=[dp(20), dp(18), dp(20), dp(16)],
         )
         with content.canvas.before:
             Color(1, 1, 1, 1)
             bg_rect = RoundedRectangle(
-                pos=content.pos, size=content.size, radius=[dp(20)] * 4)
+                pos=content.pos, size=content.size, radius=[dp(24)] * 4)
         content.bind(
             pos=lambda i, *_: _update_popup_rect(i, bg_rect),
             size=lambda i, *_: _update_popup_rect(i, bg_rect),
         )
 
-        # 标题
+        # 等宽两侧保证标题在不同手机宽度下都严格居中。
+        header = BoxLayout(size_hint=(1, None), height=dp(44))
+        header.add_widget(Widget(size_hint=(None, 1), width=dp(48)))
         title_label = Label(
             text="手机号快捷登录",
-            font_size=sp(18), bold=True,
+            font_size=sp(19), bold=True,
             color=(0.08, 0.08, 0.08, 1),
-            size_hint=(1, None), height=dp(32),
             halign="center", valign="middle", **text_style(),
         )
         title_label.bind(size=title_label.setter("text_size"))
-        content.add_widget(title_label)
+        header.add_widget(title_label)
+        close_btn = CloseIconButton(
+            size_hint=(None, 1), width=dp(48),
+        )
+        close_btn.bind(on_release=lambda *_: popup.dismiss())
+        header.add_widget(close_btn)
+        content.add_widget(header)
 
-        # 手机号输入框
-        phone_wrap = BoxLayout(size_hint=(1, None), height=dp(54))
+        # Android 字体对 emoji 支持不一致，这里不留空图标位，让文字从左侧开始。
+        phone_wrap = BoxLayout(size_hint=(1, None), height=dp(52))
         with phone_wrap.canvas.before:
-            Color(0.97, 0.98, 0.97, 1)
+            Color(0.95, 0.98, 0.96, 1)
             phone_bg = RoundedRectangle(
-                pos=phone_wrap.pos, size=phone_wrap.size, radius=[dp(27)] * 4)
+                pos=phone_wrap.pos, size=phone_wrap.size, radius=[dp(16)] * 4)
         phone_wrap.bind(
             pos=lambda i, *_: setattr(phone_bg, "pos", i.pos),
             size=lambda i, *_: setattr(phone_bg, "size", i.size),
         )
-        phone_icon = Label(
-            text="📱", font_size=sp(18),
-            size_hint=(None, 1), width=dp(48),
-            halign="center", valign="middle",
-        )
         phone_input = TextInput(
             hint_text="手机号", multiline=False, input_type="number",
+            input_filter="int", write_tab=False,
             background_normal="", background_active="",
             background_color=(0, 0, 0, 0),
             foreground_color=(0.12, 0.12, 0.12, 1),
             hint_text_color=(0.65, 0.65, 0.65, 1),
             cursor_color=(0.12, 0.12, 0.12, 1),
-            padding=(dp(4), dp(14), dp(14), dp(14)),
+            padding=(dp(18), dp(13), dp(14), dp(13)),
             font_size=sp(15), **text_style(),
         )
-        phone_wrap.add_widget(phone_icon)
         phone_wrap.add_widget(phone_input)
         content.add_widget(phone_wrap)
 
         # 验证码输入框 + 发送按钮
-        code_wrap = BoxLayout(size_hint=(1, None), height=dp(54), spacing=dp(10))
+        code_wrap = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(10))
         input_wrap = BoxLayout(size_hint=(1, 1))
         with input_wrap.canvas.before:
-            Color(0.97, 0.98, 0.97, 1)
+            Color(0.95, 0.98, 0.96, 1)
             code_bg = RoundedRectangle(
-                pos=input_wrap.pos, size=input_wrap.size, radius=[dp(27)] * 4)
+                pos=input_wrap.pos, size=input_wrap.size, radius=[dp(16)] * 4)
         input_wrap.bind(
             pos=lambda i, *_: setattr(code_bg, "pos", i.pos),
             size=lambda i, *_: setattr(code_bg, "size", i.size),
         )
-        code_icon = Label(
-            text="🔑", font_size=sp(18),
-            size_hint=(None, 1), width=dp(48),
-            halign="center", valign="middle",
-        )
         code_input = TextInput(
             hint_text="验证码", multiline=False, input_type="number",
+            input_filter="int", write_tab=False,
             background_normal="", background_active="",
             background_color=(0, 0, 0, 0),
             foreground_color=(0.12, 0.12, 0.12, 1),
             hint_text_color=(0.65, 0.65, 0.65, 1),
             cursor_color=(0.12, 0.12, 0.12, 1),
-            padding=(dp(4), dp(14), dp(14), dp(14)),
+            padding=(dp(18), dp(13), dp(12), dp(13)),
             font_size=sp(15), **text_style(),
         )
-        input_wrap.add_widget(code_icon)
         input_wrap.add_widget(code_input)
         code_wrap.add_widget(input_wrap)
 
+        def limit_length(instance, value, maximum):
+            if len(value) <= maximum:
+                return
+            cursor = min(instance.cursor_index(), maximum)
+            instance.text = value[:maximum]
+            instance.cursor = instance.get_cursor_from_index(cursor)
+
+        phone_input.bind(
+            text=lambda instance, value: limit_length(instance, value, 11))
+        code_input.bind(
+            text=lambda instance, value: limit_length(instance, value, 6))
+
         send_btn = RoundedButton(
             text="发送验证码", color=(1, 1, 1, 1),
-            size_hint=(None, 1), width=dp(112),
-            font_size=sp(13), fill_color=self.bright_green,
-            radius=dp(18), **text_style(),
+            size_hint=(None, 1), width=dp(118),
+            font_size=sp(12), bold=True, fill_color=self.bright_green,
+            radius=dp(16), **text_style(),
         )
         code_wrap.add_widget(send_btn)
         content.add_widget(code_wrap)
 
         # 提示文字
-        self._hint_label = Label(
-            text="", font_size=sp(13), color=(0.88, 0.32, 0.18, 1),
-            size_hint=(1, None), height=dp(22),
+        hint_label = Label(
+            text="", font_size=sp(12), color=(0.88, 0.32, 0.18, 1),
+            size_hint=(1, None), height=dp(24),
             halign="center", valign="middle", **text_style(),
         )
-        self._hint_label.bind(size=self._hint_label.setter("text_size"))
-        content.add_widget(self._hint_label)
+        hint_label.bind(size=hint_label.setter("text_size"))
+        content.add_widget(hint_label)
 
         # 登录按钮
         confirm_btn = RoundedButton(
-            text="登 录", color=(1, 1, 1, 1),
+            text="验证并登录", color=(1, 1, 1, 1),
             font_size=sp(18), bold=True,
-            fill_color=self.bright_green, radius=dp(27),
-            size_hint=(1, None), height=dp(54), **text_style(),
+            fill_color=self.bright_green, radius=dp(16),
+            size_hint=(1, None), height=dp(52), **text_style(),
         )
         content.add_widget(confirm_btn)
 
-        # 取消按钮
-        cancel_btn = Button(
-            text="取消", font_size=sp(15),
-            color=(0.45, 0.45, 0.45, 1),
-            background_normal="", background_down="",
-            background_color=(0, 0, 0, 0),
-            size_hint=(1, None), height=dp(36), **text_style(),
+        security_note = Label(
+            text="验证码仅用于本次登录，请勿向他人泄露",
+            font_size=sp(11), color=(0.54, 0.58, 0.55, 1),
+            size_hint=(1, None), height=dp(24),
+            halign="center", valign="middle", **text_style(),
         )
-        cancel_btn.bind(on_press=lambda *_: popup.dismiss())
-        content.add_widget(cancel_btn)
+        security_note.bind(size=security_note.setter("text_size"))
+        content.add_widget(security_note)
         popup.add_widget(content)
 
         def send_code(_instance=None):
             phone = phone_input.text.strip()
             if len(phone) != 11 or not phone.isdigit():
-                self._hint_label.text = "请输入正确的11位手机号"
+                hint_label.text = "请输入正确的11位手机号"
+                phone_input.focus = True
                 return
             self._sms_phone = phone
             self._sms_code = str(random.randint(100000, 999999))
-            show_toast(f"验证码已发送：{self._sms_code}")
-            self._hint_label.text = f"验证码已发送到 {phone[:3]}****{phone[7:]}"
-            send_btn.text = "60秒后重发"
+            hint_label.text = ""
             send_btn.disabled = True
-            self._send_countdown = 60
-            Clock.schedule_interval(self._tick_countdown(send_btn), 1)
+            send_btn.fill_color = (0.70, 0.78, 0.72, 1)
+            send_btn._update_canvas()
+            countdown["ends_at"] = time.monotonic() + 60
+
+            def tick(_dt):
+                remaining = max(
+                    0, int(countdown["ends_at"] - time.monotonic() + 0.999))
+                if remaining <= 0:
+                    send_btn.text = "重新发送"
+                    send_btn.disabled = False
+                    send_btn.fill_color = self.bright_green
+                    send_btn._update_canvas()
+                    countdown["event"] = None
+                    return False
+                send_btn.text = f"{remaining}秒后重发"
+                return True
+
+            if countdown["event"] is not None:
+                countdown["event"].cancel()
+            tick(0)
+            countdown["event"] = Clock.schedule_interval(tick, 1)
+            phone_input.focus = False
+            code_input.focus = False
+            self._show_sms_code_sent(self._sms_code, popup, code_input)
 
         def confirm_login(_instance=None):
             phone = phone_input.text.strip()
             code = code_input.text.strip()
             if not phone or not code:
-                self._hint_label.text = "请填写手机号和验证码"
+                hint_label.text = "请填写手机号和验证码"
                 return
             if phone != self._sms_phone:
-                self._hint_label.text = "手机号与发送验证码的号码不一致"
+                hint_label.text = "手机号与发送验证码的号码不一致"
                 return
             if code != self._sms_code:
-                self._hint_label.text = "验证码错误，请重新输入"
+                hint_label.text = "验证码错误，请重新输入"
                 return
             user = USER_DB.get_user(phone)
             if not user:
@@ -588,17 +801,21 @@ class LoginScreen(Screen):
 
         send_btn.bind(on_press=send_code)
         confirm_btn.bind(on_press=confirm_login)
-        popup.open()
 
-    def _tick_countdown(self, send_btn):
-        def tick(dt):
-            self._send_countdown -= 1
-            if self._send_countdown <= 0:
-                send_btn.text = "重新发送"
-                send_btn.disabled = False
-                return False
-            send_btn.text = f"{self._send_countdown}秒后重发"
-        return tick
+        def stop_countdown(*_args):
+            phone_input.focus = False
+            code_input.focus = False
+            if countdown["event"] is not None:
+                countdown["event"].cancel()
+                countdown["event"] = None
+            if getattr(self, "_sms_popup", None) is popup:
+                self._sms_popup = None
+            success_popup = getattr(self, "_sms_success_popup", None)
+            if success_popup is not None:
+                success_popup.dismiss()
+
+        popup.bind(on_dismiss=stop_countdown)
+        popup.open()
 
 
 class RegisterScreen(Screen):
@@ -723,8 +940,13 @@ class RegisterScreen(Screen):
         )
         self.password_input.bind(focus=_handle_password_focus,
                                  text=_enforce_ascii_password)
+        self.password_eye = PasswordVisibilityButton(
+            self.password_input,
+            size_hint=(None, 1), width=dp(48),
+        )
         password_wrap.add_widget(lock_icon)
         password_wrap.add_widget(self.password_input)
+        password_wrap.add_widget(self.password_eye)
         self.layout.add_widget(password_wrap)
 
         # 角色选择
@@ -984,6 +1206,7 @@ class RegisterScreen(Screen):
 
     def on_leave(self, *args):
         self.password_input.focus = False
+        self.password_eye.set_hidden(True)
         set_ascii_input_mode(False)
         self.clear_form()
         return super().on_leave(*args)

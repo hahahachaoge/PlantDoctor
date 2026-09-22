@@ -1,17 +1,21 @@
 import calendar
+import json
 import os
 from datetime import date, datetime
 
 from kivy.app import App
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Ellipse, Rectangle, RoundedRectangle
 from kivy.metrics import dp, sp
+from kivy.properties import BooleanProperty
+from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.dropdown import DropDown
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
+from kivy.uix.modalview import ModalView
 from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner, SpinnerOption
@@ -48,6 +52,49 @@ class CompactDropDown(DropDown):
     def __init__(self, **kwargs):
         kwargs.setdefault("max_height", dp(286))
         super().__init__(**kwargs)
+
+
+class PreferenceSwitch(ButtonBehavior, Widget):
+    """Compact, font-independent phone toggle for Android and desktop."""
+
+    active = BooleanProperty(False)
+
+    def __init__(self, active=False, **kwargs):
+        super().__init__(**kwargs)
+        self.active = bool(active)
+        self.bind(pos=self._redraw, size=self._redraw,
+                  active=self._redraw, state=self._redraw)
+        Clock.schedule_once(self._redraw, 0)
+
+    def _redraw(self, *_args):
+        self.canvas.clear()
+        track_width = min(self.width, dp(50))
+        track_height = min(self.height, dp(30))
+        track_x = self.center_x - track_width / 2
+        track_y = self.center_y - track_height / 2
+        margin = dp(3)
+        knob_size = max(dp(18), track_height - margin * 2)
+        knob_x = (track_x + track_width - knob_size - margin
+                  if self.active else track_x + margin)
+        with self.canvas:
+            if self.active:
+                Color(0.20, 0.66, 0.36,
+                      0.90 if self.state == "normal" else 1)
+            else:
+                Color(0.70, 0.74, 0.71,
+                      0.90 if self.state == "normal" else 1)
+            RoundedRectangle(
+                pos=(track_x, track_y), size=(track_width, track_height),
+                radius=[track_height / 2] * 4,
+            )
+            Color(1, 1, 1, 1)
+            Ellipse(
+                pos=(knob_x, self.center_y - knob_size / 2),
+                size=(knob_size, knob_size),
+            )
+
+    def on_release(self):
+        self.active = not self.active
 
 
 def _paint(widget, color=SURFACE, radius=16):
@@ -192,6 +239,253 @@ class AccountPage(Screen):
         return card
 
 
+class SettingsScreen(AccountPage):
+    """Phone-friendly app settings with locally persisted preferences."""
+
+    title = "设置"
+    subtitle = ""
+    DEFAULT_PREFERENCES = {
+        "message_notifications": True,
+        "recognition_reminders": True,
+        "wifi_only_hd_images": False,
+    }
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("name", "settings")
+        self.preferences = dict(self.DEFAULT_PREFERENCES)
+        self.preference_switches = {}
+        super().__init__(**kwargs)
+
+    def on_pre_enter(self, *_args):
+        self.preferences = self._load_preferences()
+        self.build_settings()
+
+    def build_settings(self):
+        self.body.clear_widgets()
+        self.preference_switches = {}
+        user = _current_user()
+        nick = user.get("nick_name") or user.get("username") or "未登录用户"
+        role = "VIP 用户" if user.get("role") == "vip" else "普通用户"
+
+        account_card = self.card(88, color=(0.84, 0.95, 0.87, 1))
+        account_card.add_widget(_text(nick, 18, (0.08, 0.36, 0.18, 1), 30, True))
+        account_card.add_widget(_text(
+            f"{role}  ·  账号资料仅保存在当前账户中",
+            12, (0.24, 0.43, 0.29, 1), 26))
+        self.body.add_widget(account_card)
+
+        self._add_section_title("账号与安全")
+        self.body.add_widget(self._navigation_row(
+            "个人资料", "头像、昵称、生日与种植信息", "去完善", self._open_profile))
+        self.body.add_widget(self._navigation_row(
+            "账户类型", "当前账号的识别权益", role))
+
+        self._add_section_title("通知与提醒")
+        self.body.add_widget(self._toggle_row(
+            "应用内通知", "接收订单、账户与病虫害提示",
+            "message_notifications"))
+        self.body.add_widget(self._toggle_row(
+            "识别完成提醒", "识别结束后显示结果提示",
+            "recognition_reminders"))
+
+        self._add_section_title("网络与显示")
+        self.body.add_widget(self._toggle_row(
+            "仅 Wi-Fi 加载高清图片", "移动网络下优先节省流量",
+            "wifi_only_hd_images"))
+        self.body.add_widget(self._navigation_row(
+            "地图与识别服务", "地图瓦片和云端模型均需联网", "自动连接",
+            lambda *_: show_toast("当前采用自动连接，无需手动设置")))
+
+        self._add_section_title("权限与隐私")
+        self.body.add_widget(self._navigation_row(
+            "相机与相册权限", "拍照、选择图片和更换头像时使用", "跟随系统",
+            lambda *_: show_toast("请在手机系统的应用权限中管理")))
+        self.body.add_widget(self._navigation_row(
+            "隐私与数据说明", "了解账号资料和识别图片的用途", "查看",
+            self._show_privacy))
+
+        self._add_section_title("关于")
+        self.body.add_widget(self._navigation_row(
+            "关于农智云警", "农业病虫害识别与种植服务", "查看",
+            self._show_about))
+        self.body.add_widget(self._navigation_row(
+            "当前版本", "Android 演示版", "1.0.0"))
+
+        logout = RoundedButton(
+            text="退出当前账号", font_size=sp(15),
+            color=(0.72, 0.20, 0.18, 1),
+            fill_color=(1.0, 0.92, 0.91, 1),
+            size_hint=(1, None), height=dp(48), **text_style())
+        logout.bind(on_release=self._confirm_logout)
+        self.body.add_widget(logout)
+        self.body.add_widget(_text(
+            "设置会保存在本机，重新打开应用后仍然有效",
+            11, MUTED, 34, halign="center"))
+
+    def _add_section_title(self, title):
+        self.body.add_widget(_text(title, 14, MUTED, 30, True))
+
+    def _navigation_row(self, title, description, value="", callback=None):
+        outer = FloatLayout(size_hint=(1, None), height=dp(66))
+        _paint(outer, SURFACE, 14)
+        row = BoxLayout(
+            spacing=dp(8), padding=(dp(14), dp(8)),
+            size_hint=(1, 1), pos_hint={"x": 0, "y": 0})
+        text_box = BoxLayout(orientation="vertical", spacing=0)
+        text_box.add_widget(_text(title, 15, INK, 28, True))
+        text_box.add_widget(_text(description, 11, MUTED, 22))
+        row.add_widget(text_box)
+        if value:
+            row.add_widget(_text(
+                value, 11, GREEN if callback else MUTED, 50,
+                halign="right", size_hint=(None, None), width=dp(76)))
+        if callback:
+            row.add_widget(_text(
+                ">", 17, (0.66, 0.70, 0.67, 1), 50,
+                halign="center", size_hint=(None, None), width=dp(16)))
+        outer.add_widget(row)
+        if callback:
+            touch = Button(
+                size_hint=(1, 1), pos_hint={"x": 0, "y": 0},
+                background_normal="", background_down="",
+                background_color=(0, 0, 0, 0))
+            touch.bind(on_release=callback)
+            outer.add_widget(touch)
+        return outer
+
+    def _toggle_row(self, title, description, key):
+        row = BoxLayout(
+            spacing=dp(8), padding=(dp(14), dp(8)),
+            size_hint=(1, None), height=dp(66))
+        _paint(row, SURFACE, 14)
+        text_box = BoxLayout(orientation="vertical", spacing=0)
+        text_box.add_widget(_text(title, 15, INK, 28, True))
+        text_box.add_widget(_text(description, 11, MUTED, 22))
+        row.add_widget(text_box)
+        toggle = PreferenceSwitch(
+            active=bool(self.preferences.get(key, False)),
+            size_hint=(None, None), size=(dp(52), dp(34)),
+            pos_hint={"center_y": 0.5})
+        toggle.bind(
+            active=lambda _switch, active, pref=key:
+            self._set_preference(pref, active))
+        self.preference_switches[key] = toggle
+        row.add_widget(toggle)
+        return row
+
+    @staticmethod
+    def _preferences_path():
+        app = App.get_running_app()
+        if not app:
+            return ""
+        try:
+            return os.path.join(
+                app.user_data_dir, "plantdoctor_settings.json")
+        except OSError:
+            # A locked-down desktop preview may not expose the platform data
+            # directory. Android normally always provides an app-private path.
+            return ""
+
+    def _load_preferences(self):
+        preferences = dict(self.DEFAULT_PREFERENCES)
+        path = self._preferences_path()
+        if not path or not os.path.exists(path):
+            return preferences
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                saved = json.load(file)
+            for key, default in self.DEFAULT_PREFERENCES.items():
+                if isinstance(saved.get(key), bool):
+                    preferences[key] = saved[key]
+                else:
+                    preferences[key] = default
+        except (OSError, ValueError, TypeError):
+            pass
+        return preferences
+
+    def _set_preference(self, key, active):
+        self.preferences[key] = bool(active)
+        path = self._preferences_path()
+        if not path:
+            return
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as file:
+                json.dump(self.preferences, file, ensure_ascii=False, indent=2)
+        except OSError:
+            show_toast("设置保存失败，请检查存储权限")
+
+    def _open_profile(self, *_args):
+        if self.manager and self.manager.has_screen("profile"):
+            self.manager.current = "profile"
+
+    def _show_privacy(self, *_args):
+        self._show_info(
+            "隐私与数据说明",
+            "账号资料用于展示个人档案和提供账户服务；拍照或选择的图片仅在用户主动识别、上传头像时使用。"
+            "应用不会在后台自动读取相册，也不会在未授权时调用相机。地图需要联网加载真实地图瓦片，"
+            "识别功能需要连接配置的模型服务。请勿上传包含身份证、银行卡等敏感信息的图片。")
+
+    def _show_about(self, *_args):
+        self._show_info(
+            "关于农智云警",
+            "农智云警提供病虫害图片识别、植物百科、农资信息、广州病虫害分布和个人种植服务。"
+            "识别结果仅用于辅助判断，不能替代农业技术人员的现场诊断；用药前请核对农药标签，"
+            "并遵守当地农业主管部门的规定。\n\n当前版本：1.0.0（Android 演示版）")
+
+    def _show_info(self, title, content):
+        popup = ModalView(
+            size_hint=(0.90, None), height=dp(360), background="",
+            background_color=(0, 0, 0, 0), overlay_color=(0, 0, 0, 0.45))
+        box = BoxLayout(
+            orientation="vertical", spacing=dp(12), padding=dp(18))
+        _paint(box, SURFACE, 20)
+        box.add_widget(_text(title, 19, INK, 36, True, "center"))
+        message = _text(content, 13, (0.28, 0.33, 0.29, 1), 210)
+        box.add_widget(message)
+        close = RoundedButton(
+            text="我知道了", color=(1, 1, 1, 1),
+            size_hint=(1, None), height=dp(46), **text_style())
+        close.bind(on_release=lambda *_: popup.dismiss())
+        box.add_widget(close)
+        popup.add_widget(box)
+        popup.open()
+
+    def _confirm_logout(self, *_args):
+        popup = ModalView(
+            size_hint=(0.86, None), height=dp(230), background="",
+            background_color=(0, 0, 0, 0), overlay_color=(0, 0, 0, 0.45))
+        box = BoxLayout(
+            orientation="vertical", spacing=dp(12), padding=dp(18))
+        _paint(box, SURFACE, 20)
+        box.add_widget(_text("退出当前账号", 19, INK, 36, True, "center"))
+        box.add_widget(_text(
+            "退出后不会删除本机档案和设置，下次仍可使用当前账号登录。",
+            13, MUTED, 60, halign="center"))
+        actions = BoxLayout(spacing=dp(10), size_hint=(1, None), height=dp(44))
+        cancel = RoundedButton(
+            text="取消", color=GREEN, fill_color=SOFT_GREEN, **text_style())
+        confirm = RoundedButton(
+            text="确认退出", color=(1, 1, 1, 1),
+            fill_color=(0.82, 0.25, 0.22, 1), **text_style())
+        cancel.bind(on_release=lambda *_: popup.dismiss())
+
+        def logout(*_unused):
+            app = App.get_running_app()
+            if app:
+                app.current_user = None
+            popup.dismiss()
+            if self.manager:
+                self.manager.current = "login"
+
+        confirm.bind(on_release=logout)
+        actions.add_widget(cancel)
+        actions.add_widget(confirm)
+        box.add_widget(actions)
+        popup.add_widget(box)
+        popup.open()
+
+
 class FavoriteScreen(AccountPage):
     title = "我的收藏"
     subtitle = ""
@@ -284,7 +578,15 @@ class NotificationScreen(AccountPage):
 
     def __init__(self, **kwargs):
         kwargs.setdefault("name", "notifications")
+        # 「我的」页和社区页共用同一个通知中心，由入口写入
+        # return_screen，保证 Android 返回键的路径与用户进入路径一致。
+        self.return_screen = "mypage"
         super().__init__(**kwargs)
+
+    def go_back(self, *_args):
+        target = self.return_screen or "mypage"
+        if self.manager and self.manager.has_screen(target):
+            self.manager.current = target
 
     def on_pre_enter(self, *_args):
         self.refresh_notifications()

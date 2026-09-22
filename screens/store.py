@@ -2,7 +2,7 @@ import os
 
 from kivy.app import App
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, RoundedRectangle, Line, Ellipse
+from kivy.graphics import Color, Rectangle, RoundedRectangle, Line
 from kivy.metrics import dp, sp
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -108,8 +108,8 @@ class PesticideCard(ButtonBehavior, BoxLayout):
                 ph_rect = RoundedRectangle(
                     pos=ph.pos, size=ph.size, radius=[dp(10)] * 4)
             ph.bind(
-                pos=lambda i, r=ph_rect, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=ph_rect, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=ph_rect: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=ph_rect: setattr(r, "size", i.size),
             )
             first = Label(
                 text=pesticide_data["name"][0],
@@ -143,8 +143,8 @@ class PesticideCard(ButtonBehavior, BoxLayout):
             tw_bg = RoundedRectangle(
                 pos=type_wrap.pos, size=type_wrap.size, radius=[dp(6)] * 4)
         type_wrap.bind(
-            pos=lambda i, r=tw_bg, *_: setattr(r, "pos", i.pos),
-            size=lambda i, r=tw_bg, *_: setattr(r, "size", i.size),
+            pos=lambda i, _value, r=tw_bg: setattr(r, "pos", i.pos),
+            size=lambda i, _value, r=tw_bg: setattr(r, "size", i.size),
         )
         type_lbl = Label(
             text=pesticide_data.get("type", ""),
@@ -617,26 +617,22 @@ class PesticideDetailScreen(Screen):
         self.content_box.add_widget(self.name_label)
 
         self.content_box.add_widget(self._build_divider())
-        self.crops_section = self._build_section(
-            "适用作物", "", (0.12, 0.58, 0.30, 1))
+        self.crops_section = self._build_section("适用作物", "")
         self.content_box.add_widget(self.crops_section["wrapper"])
         self.content_box.add_widget(self._build_divider())
-        self.target_section = self._build_section(
-            "防治对象", "", (0.18, 0.42, 0.78, 1))
+        self.target_section = self._build_section("防治对象", "")
         self.content_box.add_widget(self.target_section["wrapper"])
         self.content_box.add_widget(self._build_divider())
-        self.method_section = self._build_section(
-            "使用方法", "", (0.55, 0.35, 0.75, 1))
+        self.method_section = self._build_section("使用方法", "")
         self.content_box.add_widget(self.method_section["wrapper"])
         self.content_box.add_widget(self._build_divider())
-        self.caution_section = self._build_section(
-            "注意事项", "", (0.88, 0.45, 0.18, 1))
+        self.caution_section = self._build_section("注意事项", "")
         self.content_box.add_widget(self.caution_section["wrapper"])
 
         bind_deferred_layout(self.layout, self._update_scroll_height)
         Clock.schedule_once(lambda dt: self._update_scroll_height(), 0)
 
-    def _build_section(self, title, content, accent_color):
+    def _build_section(self, title, content):
         wrapper = BoxLayout(
             orientation="vertical", spacing=dp(4),
             padding=(0, dp(8), 0, dp(8)),
@@ -644,18 +640,6 @@ class PesticideDetailScreen(Screen):
         )
         wrapper.bind(minimum_height=wrapper.setter("height"))
 
-        title_row = BoxLayout(
-            size_hint=(1, None), height=dp(26), spacing=dp(8))
-        dot = Widget(size_hint=(None, None), size=(dp(8), dp(8)))
-        dot.pos_hint = {"center_y": 0.5}
-        with dot.canvas:
-            Color(*accent_color)
-            dot_circle = Ellipse(pos=dot.pos, size=dot.size)
-        dot.bind(
-            pos=lambda i, e=dot_circle, *_: setattr(e, "pos", i.pos),
-            size=lambda i, e=dot_circle, *_: setattr(e, "size", i.size),
-        )
-        title_row.add_widget(dot)
         title_lbl = Label(
             text=title, font_size=sp(15), bold=True,
             color=(0.12, 0.12, 0.12, 1),
@@ -663,8 +647,7 @@ class PesticideDetailScreen(Screen):
             halign="left", valign="middle", **text_style(),
         )
         title_lbl.bind(size=title_lbl.setter("text_size"))
-        title_row.add_widget(title_lbl)
-        wrapper.add_widget(title_row)
+        wrapper.add_widget(title_lbl)
 
         content_lbl = Label(
             text=content, font_size=sp(15),
@@ -685,8 +668,8 @@ class PesticideDetailScreen(Screen):
             Color(0.92, 0.92, 0.92, 1)
             div_rect = Rectangle(pos=divider.pos, size=divider.size)
         divider.bind(
-            pos=lambda i, r=div_rect, *_: setattr(r, "pos", i.pos),
-            size=lambda i, r=div_rect, *_: setattr(r, "size", i.size),
+            pos=lambda i, _value, r=div_rect: setattr(r, "pos", i.pos),
+            size=lambda i, _value, r=div_rect: setattr(r, "size", i.size),
         )
         return divider
 
@@ -704,6 +687,12 @@ class PesticideDetailScreen(Screen):
 
     def _sync_dynamic_label(self, instance, _value):
         instance.height = max(dp(24), instance.texture_size[1] + dp(8))
+
+    @staticmethod
+    def _flush_left_text(value):
+        """Remove imported indentation without changing text inside a line."""
+        lines = str(value or "").splitlines()
+        return "\n".join(line.lstrip() for line in lines).strip()
 
     def _update_bg(self, *_args):
         self.bg_rect.pos = self.layout.pos
@@ -725,10 +714,17 @@ class PesticideDetailScreen(Screen):
             return
         self.title_label.text = pesticide["name"]
         self.name_label.text = pesticide["name"]
-        self.crops_section["content_label"].text = pesticide["crops"]
-        self.target_section["content_label"].text = pesticide["target"]
-        self.method_section["content_label"].text = pesticide["method"]
-        self.caution_section["content_label"].text = pesticide["caution"]
+        # Database text is displayed flush with the section titles.  Stripping
+        # stored leading/trailing whitespace also avoids an apparent Android-
+        # only indent when content was imported with spaces or newlines.
+        self.crops_section["content_label"].text = self._flush_left_text(
+            pesticide.get("crops"))
+        self.target_section["content_label"].text = self._flush_left_text(
+            pesticide.get("target"))
+        self.method_section["content_label"].text = self._flush_left_text(
+            pesticide.get("method"))
+        self.caution_section["content_label"].text = self._flush_left_text(
+            pesticide.get("caution"))
 
         # 更新图片
         if hasattr(self, "_detail_img_box"):

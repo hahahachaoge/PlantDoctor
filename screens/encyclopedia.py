@@ -126,8 +126,8 @@ class EncyclopediaScreen(Screen):
                 Color(0.96, 0.98, 0.96, 1)
                 h_bg = Rectangle(pos=header.pos, size=header.size)
             header.bind(
-                pos=lambda i, r=h_bg, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=h_bg, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=h_bg: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=h_bg: setattr(r, "size", i.size),
             )
             # 绿色竖条
             bar = Widget(size_hint=(None, 1), width=dp(4))
@@ -136,8 +136,8 @@ class EncyclopediaScreen(Screen):
                 bar_rect = RoundedRectangle(
                     pos=bar.pos, size=bar.size, radius=[dp(2)] * 4)
             bar.bind(
-                pos=lambda i, r=bar_rect, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=bar_rect, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=bar_rect: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=bar_rect: setattr(r, "size", i.size),
             )
             header.add_widget(bar)
             header.add_widget(Widget(size_hint=(None, 1), width=dp(10)))

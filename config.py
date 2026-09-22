@@ -87,10 +87,14 @@ LIKE_ICON_ON = os.path.join(IMAGE_DIR, "_rounded", "like_on_green.png")
 
 
 def _make_like_on_icon():
-    """生成「已点赞」的绿色大拇指（幂等；失败时静默回退到未点赞图标）。"""
-    if not os.path.exists(LIKE_ICON_OFF) or os.path.exists(LIKE_ICON_ON):
+    """生成「已点赞」的绿色大拇指，源图更新时同步刷新缓存。"""
+    if not os.path.exists(LIKE_ICON_OFF):
         return
     try:
+        if (os.path.exists(LIKE_ICON_ON)
+                and os.path.getmtime(LIKE_ICON_ON)
+                >= os.path.getmtime(LIKE_ICON_OFF)):
+            return
         os.makedirs(os.path.dirname(LIKE_ICON_ON), exist_ok=True)
         from PIL import Image as _PILImage
         src = _PILImage.open(LIKE_ICON_OFF).convert("RGBA")

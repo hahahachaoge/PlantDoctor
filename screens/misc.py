@@ -1,11 +1,10 @@
-import io
 import math
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
-from PIL import Image as PILImage
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
@@ -26,13 +25,23 @@ from widgets.base_widgets import CircleImage, RoundedButton
 
 
 MAP_CENTER = (23.1291, 113.2644)
-MAP_ZOOM = 9
-MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+MAP_ZOOM = 10
 MAP_USER_AGENT = "PlantDoctor/1.0 (+https://github.com/hahahachaoge/PlantDoctor)"
-MAP_CACHE_DIR = os.path.join(os.path.dirname(IMAGE_DIR), "photos", "map_tiles")
+# Both providers below render current OpenStreetMap data.  The German community
+# endpoint is tried first because it is reachable from the project's mainland
+# mobile network, while the Foundation endpoint remains the fail-over.  Keeping
+# the providers as data (rather than adding a native map SDK) also avoids a new
+# Android binary dependency and an API-key requirement.
+MAP_TILE_SOURCES = (
+    ("OpenStreetMap DE", "https://tile.openstreetmap.de/{z}/{x}/{y}.png"),
+    ("OpenStreetMap", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+)
+MAP_TILE_SIZE = 256
+MAP_CACHE_SECONDS = 7 * 24 * 60 * 60
+_TILE_HTTP = threading.local()
 
-# 广州市现辖 11 个行政区。这里使用行政区中心附近的 WGS84 参考位置帮助用户
-# 理解全市范围；这些点不是病虫害发生记录，不参与用户观察统计。
+# 广州市现辖 11 个行政区。以下 WGS84 坐标用于在“病虫害位置”图层中提供
+# 全市区域展示；它们不是现场发生记录，也不参与用户观察统计。
 REFERENCE_POINTS = (
     {"location_name": "越秀区", "latitude": 23.1291, "longitude": 113.2668},
     {"location_name": "荔湾区", "latitude": 23.1259, "longitude": 113.2442},
@@ -67,78 +76,91 @@ def _pixel_geo(x, y, zoom):
     return latitude, longitude
 
 
-def _tile_path(zoom, x, y):
-    return os.path.join(MAP_CACHE_DIR, str(zoom), str(x), f"{y}.png")
+def _map_cache_dir():
+    """Return an app-private, writable tile cache on Android and desktop."""
+    app = App.get_running_app()
+    try:
+        user_dir = getattr(app, "user_data_dir", "") if app else ""
+    except OSError:
+        # A locked-down Windows account may deny Kivy's roaming-data folder.
+        # Android normally uses its writable app-private files directory.
+        user_dir = ""
+    if not user_dir:
+        user_dir = os.path.join(os.path.dirname(IMAGE_DIR), "photos")
+    return os.path.join(user_dir, "map_tiles")
 
 
-def _read_tile(zoom, x, y):
-    """Read a cached tile or fetch one current-view tile from OSM."""
-    target = _tile_path(zoom, x, y)
-    if os.path.exists(target):
+def _tile_path(cache_dir, zoom, x, y):
+    return os.path.join(cache_dir, str(zoom), str(x), f"{y}.png")
+
+
+def _read_tile(cache_dir, zoom, x, y):
+    """Return a cached tile path, otherwise download it from a live provider."""
+    target = _tile_path(cache_dir, zoom, x, y)
+    cached = os.path.isfile(target) and os.path.getsize(target) > 100
+    if cached and time.time() - os.path.getmtime(target) < MAP_CACHE_SECONDS:
+        return target, "本地缓存"
+
+    last_error = None
+    headers = {
+        "User-Agent": MAP_USER_AGENT,
+        "Accept": "image/avif,image/webp,image/png,image/*;q=0.8,*/*;q=0.5",
+    }
+    session = getattr(_TILE_HTTP, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.trust_env = False
+        _TILE_HTTP.session = session
+    for provider, template in MAP_TILE_SOURCES:
         try:
-            return PILImage.open(target).convert("RGB")
-        except OSError:
-            pass
+            response = session.get(
+                template.format(z=zoom, x=x, y=y),
+                headers=headers,
+                timeout=(4, 10),
+            )
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "").lower()
+            if "image" not in content_type or len(response.content) <= 100:
+                raise ValueError("地图服务未返回有效图片")
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            temporary = f"{target}.{threading.get_ident()}.part"
+            with open(temporary, "wb") as tile_file:
+                tile_file.write(response.content)
+            os.replace(temporary, target)
+            return target, provider
+        except (OSError, requests.RequestException, ValueError) as exc:
+            last_error = exc
+    if cached:
+        # A stale real tile is still more useful than a blank screen while the
+        # phone is temporarily offline; the next entry will try refreshing it.
+        return target, "离线缓存"
+    raise RuntimeError(str(last_error or "地图服务不可用"))
 
-    response = requests.get(
-        MAP_TILE_URL.format(z=zoom, x=x, y=y),
-        headers={"User-Agent": MAP_USER_AGENT}, timeout=10,
-    )
-    response.raise_for_status()
-    tile = PILImage.open(io.BytesIO(response.content)).convert("RGB")
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    tile.save(target, "PNG")
-    return tile
 
-
-def compose_osm_view(latitude, longitude, zoom, width, height):
-    """Compose only the visible OSM tiles into a Kivy-friendly local image."""
-    width = max(360, min(int(width), 1080))
-    height = max(640, min(int(height), 1600))
+def _visible_tiles(latitude, longitude, zoom, width, height):
+    """Describe visible Web-Mercator tiles and their viewport origin."""
+    width = max(1, int(width))
+    height = max(1, int(height))
+    # Android exposes physical pixels while Kivy controls are density-aware.
+    # Rendering a 256 px map tile as up to 512 physical pixels keeps labels
+    # readable and avoids requesting 40-60 tiny tiles on a high-DPI phone.
+    display_scale = max(1.0, min(2.0, float(dp(1))))
+    world_width = width / display_scale
+    world_height = height / display_scale
     center_x, center_y = _world_pixel(latitude, longitude, zoom)
-    left = center_x - width / 2
-    top = center_y - height / 2
-    first_x = math.floor(left / 256)
-    last_x = math.floor((left + width - 1) / 256)
-    first_y = math.floor(top / 256)
-    last_y = math.floor((top + height - 1) / 256)
+    left = center_x - world_width / 2
+    top = center_y - world_height / 2
+    first_x = math.floor(left / MAP_TILE_SIZE)
+    last_x = math.floor((left + world_width - 1) / MAP_TILE_SIZE)
+    first_y = math.floor(top / MAP_TILE_SIZE)
+    last_y = math.floor((top + world_height - 1) / MAP_TILE_SIZE)
     tile_count = 2 ** zoom
-
-    result = PILImage.new("RGB", (width, height), (230, 233, 226))
-    jobs = []
+    tiles = []
     for tile_x in range(first_x, last_x + 1):
         for tile_y in range(first_y, last_y + 1):
             if 0 <= tile_y < tile_count:
-                jobs.append((tile_x, tile_y, tile_x % tile_count))
-
-    loaded = 0
-    # 一个手机屏幕通常需要 8—15 张瓦片；并行读取/下载能避免首次进入时
-    # 按顺序等待十几次网络往返。
-    with ThreadPoolExecutor(max_workers=min(6, len(jobs) or 1)) as executor:
-        futures = {
-            executor.submit(_read_tile, zoom, wrapped_x, tile_y): (tile_x, tile_y)
-            for tile_x, tile_y, wrapped_x in jobs
-        }
-        for future in as_completed(futures):
-            tile_x, tile_y = futures[future]
-            try:
-                tile = future.result()
-            except (OSError, requests.RequestException, ValueError):
-                continue
-            paste_x = round(tile_x * 256 - left)
-            paste_y = round(tile_y * 256 - top)
-            result.paste(tile, (paste_x, paste_y))
-            loaded += 1
-    if not loaded:
-        raise RuntimeError("当前网络无法加载地图瓦片")
-
-    os.makedirs(MAP_CACHE_DIR, exist_ok=True)
-    output = os.path.join(
-        MAP_CACHE_DIR,
-        f"view_{zoom}_{latitude:.5f}_{longitude:.5f}_{width}x{height}.png",
-    )
-    result.save(output, "PNG")
-    return output, width, height
+                tiles.append((tile_x, tile_y, tile_x % tile_count))
+    return tiles, left, top, world_width, world_height, display_scale
 
 
 def _rounded_background(widget, color, radius=16):
@@ -189,7 +211,7 @@ class MapMarker(ButtonBehavior, FloatLayout):
             )
             self.add_widget(self.picture)
         self.label = Label(
-            text=(report.get("location_name", "位置参考") if is_reference
+            text=(report.get("location_name", "病虫害位置") if is_reference
                   else report.get("pest_name", "观察点")),
             size_hint=(1, None), height=dp(23), pos_hint={"x": 0, "y": 0},
             font_size=sp(10), bold=True, color=(0.10, 0.16, 0.12, 1),
@@ -235,8 +257,13 @@ class MapScreen(BaseScreen):
         self._reports = []
         self._markers = []
         self._drag_start = None
-        self._drag_base_map_pos = None
-        self._drag_base_marker_pos = None
+        self._drag_tile_positions = []
+        self._drag_marker_positions = []
+        self._drag_cancelled_load = False
+        self._tile_widgets = []
+        self._loaded_tile_count = 0
+        self._map_cache = ""
+        self._resize_event = None
 
         self.layout = FloatLayout()
         self.add_widget(self.layout)
@@ -247,21 +274,32 @@ class MapScreen(BaseScreen):
             pos=lambda item, *_: setattr(self.map_background, "pos", item.pos),
             size=lambda item, *_: setattr(self.map_background, "size", item.size),
         )
-        self.map_image = Image(
-            source="",
-            allow_stretch=True, keep_ratio=False, size_hint=(1, 1),
+        # Tiles are individual Image widgets.  They appear as soon as each
+        # download finishes, instead of waiting for one large PIL composite.
+        # This is important on Android: a slow/blocked tile must not leave the
+        # whole screen blank.
+        self.tile_layer = FloatLayout(size_hint=(1, 1))
+        self.layout.add_widget(self.tile_layer)
+
+        self.map_message = RoundedButton(
+            text="正在连接在线地图…", size_hint=(None, None),
+            size=(dp(264), dp(96)), pos_hint={"center_x": 0.5, "center_y": 0.52},
+            font_size=sp(13), color=(0.18, 0.28, 0.20, 1),
+            fill_color=(1, 1, 1, 0.94), disabled=True, **text_style(),
         )
-        self.layout.add_widget(self.map_image)
+        self.map_message.bind(on_release=lambda *_: self.load_map())
 
         self.marker_layer = FloatLayout(size_hint=(1, 1))
         self.layout.add_widget(self.marker_layer)
         self.marker_layer.bind(pos=self._position_markers, size=self._position_markers)
+        self.layout.add_widget(self.map_message)
 
         self._build_top_bar()
         self._build_bottom_bar()
+        self._build_zoom_controls()
 
         self.status = Label(
-            text="按住左键可上下左右拖动地图", size_hint=(0.86, None), height=dp(28),
+            text="按住地图可上下左右拖动", size_hint=(0.86, None), height=dp(28),
             pos_hint={"center_x": 0.5, "y": 0.142},
             font_size=sp(11), color=(0.20, 0.20, 0.20, 1),
             halign="center", valign="middle", **text_style(),
@@ -269,6 +307,16 @@ class MapScreen(BaseScreen):
         self.status.bind(size=self.status.setter("text_size"))
         _rounded_background(self.status, (1, 1, 1, 0.88), 10)
         self.layout.add_widget(self.status)
+
+        self.attribution = Label(
+            text="", size_hint=(None, None), size=(dp(180), dp(18)),
+            pos_hint={"right": 0.985, "y": 0.112}, font_size=sp(8),
+            color=(0.22, 0.22, 0.22, 0.82), halign="right", valign="middle",
+            **text_style(),
+        )
+        self.attribution.bind(size=self.attribution.setter("text_size"))
+        self.layout.add_widget(self.attribution)
+        self.layout.bind(size=self._schedule_viewport_reload)
 
     def _build_top_bar(self):
         back = RoundedButton(
@@ -281,7 +329,7 @@ class MapScreen(BaseScreen):
         self.layout.add_widget(back)
 
         area = Label(
-            text="广州市全域", size_hint=(None, None), size=(dp(150), dp(42)),
+            text="广州市城区", size_hint=(None, None), size=(dp(150), dp(42)),
             pos_hint={"center_x": 0.5, "top": 0.965}, font_size=sp(16), bold=True,
             color=(0.08, 0.08, 0.08, 1), halign="center", valign="middle",
             **text_style(),
@@ -314,8 +362,41 @@ class MapScreen(BaseScreen):
             bar.add_widget(button)
         self.layout.add_widget(bar)
 
+    def _build_zoom_controls(self):
+        controls = BoxLayout(
+            orientation="vertical", spacing=dp(5), size_hint=(None, None),
+            size=(dp(42), dp(89)), pos_hint={"right": 0.965, "center_y": 0.48},
+        )
+        for caption, delta in (("+", 1), ("−", -1)):
+            button = RoundedButton(
+                text=caption, font_size=sp(20), color=(0.10, 0.34, 0.18, 1),
+                fill_color=(1, 1, 1, 0.95), **text_style(),
+            )
+            button.bind(on_release=lambda _button, step=delta: self.change_zoom(step))
+            controls.add_widget(button)
+        self.zoom_controls = controls
+        self.layout.add_widget(controls)
+
     def on_pre_enter(self, *_args):
         self.refresh_reports()
+        self._queue_viewport_reload(0.12)
+
+    def _schedule_viewport_reload(self, *_args):
+        if self.width <= 1 or self.height <= 1:
+            return
+        if self.manager is not None and self.manager.current != self.name:
+            return
+        self._queue_viewport_reload(0.25)
+
+    def _queue_viewport_reload(self, delay):
+        """Debounce enter/resize events so the phone downloads each tile once."""
+        if self._resize_event is not None:
+            self._resize_event.cancel()
+        self._resize_event = Clock.schedule_once(
+            self._run_viewport_reload, max(0, delay))
+
+    def _run_viewport_reload(self, _dt):
+        self._resize_event = None
         self.load_map()
 
     def _go_home(self):
@@ -333,9 +414,9 @@ class MapScreen(BaseScreen):
         for report in REFERENCE_POINTS:
             reference = dict(report)
             reference.update(
-                pest_name="行政区位置参考", crop="—", severity="—",
-                username="—", created_at="—", source_type="行政区位置参考",
-                note="用于标示广州市行政区位置，不代表当地发生病虫害。",
+                pest_name="病虫害位置", crop="—", severity="—",
+                username="—", created_at="—", source_type="区域展示点",
+                note="用于展示广州市各区域，便于查看和录入观察；不代表实际发生记录。",
             )
             self._add_marker(reference, True)
         for report in self._reports:
@@ -368,6 +449,12 @@ class MapScreen(BaseScreen):
             (-128, 0), (128, 0), (0, -148), (0, 148),
         )
         occupied = []
+        if hasattr(self, "zoom_controls"):
+            controls = self.zoom_controls
+            occupied.append((
+                controls.x - dp(8), controls.y - dp(8),
+                controls.right + dp(8), controls.top + dp(8),
+            ))
         for marker, raw_x, raw_y in raw_positions:
             in_view = (
                 self.marker_layer.x - marker.width < raw_x < self.marker_layer.right + marker.width
@@ -409,40 +496,124 @@ class MapScreen(BaseScreen):
             marker._draw_marker()
 
     def load_map(self):
+        if self.layout.width <= 1 or self.layout.height <= 1:
+            Clock.schedule_once(lambda _dt: self.load_map(), 0.1)
+            return
         self._load_serial += 1
         serial = self._load_serial
         self.status.text = "正在加载真实地图…"
-        width = self.width or 360
-        height = self.height or 800
+        self.map_message.text = "正在连接在线地图…"
+        self.map_message.disabled = True
+        self.map_message.opacity = 1
+        self.attribution.text = ""
+        self.tile_layer.clear_widgets()
+        self._tile_widgets = []
+        self._loaded_tile_count = 0
+        self._map_cache = _map_cache_dir()
+        cache_dir = self._map_cache
+        zoom = self.zoom
+        tiles, left, top, width, height, display_scale = _visible_tiles(
+            self.center_lat, self.center_lon, zoom,
+            self.layout.width, self.layout.height,
+        )
+        self._map_pixel_size = (width, height)
+        self._position_markers()
 
         def worker():
-            try:
-                result = compose_osm_view(
-                    self.center_lat, self.center_lon, self.zoom, width, height)
-            except Exception as exc:
-                message = str(exc)
-                Clock.schedule_once(
-                    lambda _dt, s=serial, msg=message: self._map_failed(s, msg), 0)
-                return
+            loaded = 0
+            failures = []
+            with ThreadPoolExecutor(max_workers=min(6, len(tiles) or 1)) as executor:
+                futures = {
+                    executor.submit(
+                        _read_tile, cache_dir, zoom, wrapped_x, tile_y
+                    ): (tile_x, tile_y)
+                    for tile_x, tile_y, wrapped_x in tiles
+                }
+                for future in as_completed(futures):
+                    tile_x, tile_y = futures[future]
+                    try:
+                        source, provider = future.result()
+                    except Exception as exc:
+                        failures.append(str(exc))
+                        continue
+                    loaded += 1
+                    Clock.schedule_once(
+                        lambda _dt, s=serial, path=source, x=tile_x, y=tile_y,
+                               l=left, t=top, w=width, h=height,
+                               scale=display_scale, p=provider: self._apply_tile(
+                                   s, path, x, y, l, t, w, h, scale, p),
+                        0,
+                    )
+            message = failures[0] if failures else ""
             Clock.schedule_once(
-                lambda _dt, s=serial, data=result: self._apply_map(s, data), 0)
+                lambda _dt, s=serial, count=loaded, total=len(tiles), msg=message:
+                    self._tiles_finished(s, count, total, msg),
+                0,
+            )
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _apply_map(self, serial, result):
+    def _apply_tile(self, serial, source, tile_x, tile_y,
+                    left, top, width, height, display_scale, provider):
         if serial != self._load_serial:
             return
-        source, width, height = result
-        self._map_pixel_size = (width, height)
-        self.map_image.source = source
-        self.map_image.reload()
-        self.status.text = "按住左键拖动地图，松开即可停止"
-        self._position_markers()
+        image = Image(
+            source=source, allow_stretch=True, keep_ratio=False,
+            size_hint=(None, None),
+            size=(MAP_TILE_SIZE * display_scale, MAP_TILE_SIZE * display_scale),
+        )
+        image.pos = (
+            self.layout.x + (tile_x * MAP_TILE_SIZE - left) * display_scale,
+            self.layout.y + (
+                height - ((tile_y + 1) * MAP_TILE_SIZE - top)
+            ) * display_scale,
+        )
+        self.tile_layer.add_widget(image)
+        self._tile_widgets.append(image)
+        self._loaded_tile_count += 1
+        self.map_message.opacity = 0
+        self.map_message.disabled = True
+        self.attribution.text = "© OpenStreetMap contributors"
+        if self._loaded_tile_count == 1:
+            self.status.text = "在线地图已显示，可拖动或缩放"
+
+    def _tiles_finished(self, serial, loaded, total, message):
+        if serial != self._load_serial:
+            return
+        if not loaded:
+            self._map_failed(serial, message or "请检查手机网络连接")
+            return
+        if loaded < total:
+            self.status.text = f"已显示地图，{total - loaded} 个区域加载失败，可重新进入加载"
+        else:
+            self.status.text = "按住地图可自由拖动，使用 +/− 缩放"
 
     def _map_failed(self, serial, message):
         if serial != self._load_serial:
             return
-        self.status.text = f"离线地图模式：{message}"
+        # Do not leave the Android screen as an unexplained blank panel.
+        raw_message = (message or "网络不可用").strip().replace("\n", " ")
+        lowered = raw_message.lower()
+        if any(key in lowered for key in (
+                "connection", "timeout", "ssl", "proxy", "name resolution")):
+            short_message = "无法连接地图服务，请检查手机网络"
+        else:
+            short_message = raw_message
+            if len(short_message) > 24:
+                short_message = short_message[:24] + "…"
+        self.map_message.text = f"在线地图暂时无法加载\n{short_message}\n点击重试"
+        self.map_message.disabled = False
+        self.map_message.opacity = 1
+        self.status.text = "地图连接失败，请检查网络后点击中间按钮重试"
+
+    def change_zoom(self, delta):
+        new_zoom = max(8, min(15, self.zoom + int(delta)))
+        if new_zoom == self.zoom:
+            show_toast("已到当前地图缩放范围")
+            return
+        self.zoom = new_zoom
+        self._position_markers()
+        self.load_map()
 
     def go_nearby(self, *_args):
         self.center_lat, self.center_lon = MAP_CENTER
@@ -466,11 +637,14 @@ class MapScreen(BaseScreen):
             f"说明：{report.get('note') or '无'}"
         )
         if is_reference:
-            body += "\n\n此橙色点是行政区位置参考，不是病虫害发生记录。"
+            body += "\n\n此橙色点是病虫害位置的区域展示点，不代表现场发生记录或官方疫情结论。"
         open_text_popup("观察点详情", body, height=430)
 
     def on_touch_down(self, touch):
         button = getattr(touch, "button", None)
+        if button in ("scrollup", "scrolldown") and self.collide_point(*touch.pos):
+            self.change_zoom(1 if button == "scrollup" else -1)
+            return True
         if button not in (None, "left"):
             return super().on_touch_down(touch)
         if not self.collide_point(*touch.pos):
@@ -478,12 +652,26 @@ class MapScreen(BaseScreen):
         if (hasattr(self, "bottom_bar") and self.bottom_bar.collide_point(*touch.pos)) \
                 or touch.y > self.top - dp(72):
             return super().on_touch_down(touch)
+        if (hasattr(self, "zoom_controls")
+                and self.zoom_controls.collide_point(*touch.pos)):
+            return super().on_touch_down(touch)
+        if (self.map_message.opacity > 0
+                and self.map_message.collide_point(*touch.pos)):
+            return super().on_touch_down(touch)
         for marker in reversed(self._markers):
             if marker.opacity and marker.collide_point(*touch.pos):
                 return super().on_touch_down(touch)
         self._drag_start = touch.pos
-        self._drag_base_map_pos = self.map_image.pos
-        self._drag_base_marker_pos = self.marker_layer.pos
+        # Kivy child positions are absolute; moving only the FloatLayout does
+        # not translate its existing children on Android.  Snapshot every
+        # visible tile/marker and move those widgets directly during the drag.
+        self._drag_tile_positions = [
+            (tile, tuple(tile.pos)) for tile in self._tile_widgets
+        ]
+        self._drag_marker_positions = [
+            (marker, tuple(marker.pos), marker.anchor_point) for marker in self._markers
+        ]
+        self._drag_cancelled_load = False
         touch.grab(self)
         return True
 
@@ -492,14 +680,23 @@ class MapScreen(BaseScreen):
             return super().on_touch_move(touch)
         dx = touch.x - self._drag_start[0]
         dy = touch.y - self._drag_start[1]
-        self.map_image.pos = (
-            self._drag_base_map_pos[0] + dx,
-            self._drag_base_map_pos[1] + dy,
-        )
-        self.marker_layer.pos = (
-            self._drag_base_marker_pos[0] + dx,
-            self._drag_base_marker_pos[1] + dy,
-        )
+        if (not self._drag_cancelled_load
+                and (abs(dx) > dp(2) or abs(dy) > dp(2))):
+            self._load_serial += 1  # ignore tiles finishing for the old viewport
+            self._drag_tile_positions = [
+                (tile, tuple(tile.pos)) for tile in self._tile_widgets
+            ]
+            self._drag_marker_positions = [
+                (marker, tuple(marker.pos), marker.anchor_point)
+                for marker in self._markers
+            ]
+            self._drag_cancelled_load = True
+        for widget, base_pos in self._drag_tile_positions:
+            widget.pos = (base_pos[0] + dx, base_pos[1] + dy)
+        for widget, base_pos, base_anchor in self._drag_marker_positions:
+            if base_anchor:
+                widget.anchor_point = (base_anchor[0] + dx, base_anchor[1] + dy)
+            widget.pos = (base_pos[0] + dx, base_pos[1] + dy)
         self.status.text = "拖动中，松开左键停止并加载当前位置"
         return True
 
@@ -520,14 +717,15 @@ class MapScreen(BaseScreen):
             # 保持在广州市及邻近边缘，避免误拖到无关省市。
             self.center_lat = max(22.35, min(23.95, latitude))
             self.center_lon = max(112.70, min(114.30, longitude))
-        self.map_image.pos = self.layout.pos
-        self.marker_layer.pos = self.layout.pos
         self._drag_start = None
+        self._drag_tile_positions = []
+        self._drag_marker_positions = []
+        self._drag_cancelled_load = False
         self._position_markers()
         if moved:
             self.load_map()
         else:
-            self.status.text = "地图已停止；按住左键可继续拖动"
+            self.status.text = "地图已停止；按住地图可继续拖动"
         return True
 
     def open_add_report(self, *_args):
@@ -662,31 +860,30 @@ class MapDataScreen(AccountPage):
             reports = STORE_DB.get_pest_reports()
         except Exception:
             reports = []
-        summary = self.card(116, color=(0.84, 0.95, 0.87, 1))
-        summary.add_widget(_text("广州市标记点清单", 19, INK, 32, True))
+        summary = self.card(
+            146, padding=14, spacing=6, color=(0.84, 0.95, 0.87, 1))
+        summary.add_widget(_text("广州市病虫害位置清单", 19, INK, 32, True))
         summary.add_widget(_text(
-            f"行政区位置参考 {len(REFERENCE_POINTS)} 个 · 用户观察点 {len(reports)} 个",
-            12, (0.18, 0.43, 0.26, 1), 26))
+            f"病虫害位置 {len(REFERENCE_POINTS)} 个 · 覆盖广州 11 个区",
+            12, (0.18, 0.43, 0.26, 1), 30))
         summary.add_widget(_text(
-            "橙色为行政区定位参考，绿色才是用户提交的现场观察。",
-            11, MUTED, 32))
+            "橙色为区域展示点，绿色为用户提交的现场观察；地图展示不等于官方疫情结论。",
+            11, MUTED, 44))
         self.body.add_widget(summary)
 
-        self.body.add_widget(_text("行政区位置参考", 17, INK, 38, True))
+        self.body.add_widget(_text("病虫害位置", 17, INK, 38, True))
         for index, point in enumerate(REFERENCE_POINTS, start=1):
-            card = self.card(106, padding=12, spacing=3)
+            card = self.card(86, padding=12, spacing=3)
             heading = BoxLayout(size_hint=(1, None), height=dp(28))
             heading.add_widget(_text(
                 f"{index}. {point['location_name']}", 15, INK, 28, True))
             heading.add_widget(_text(
-                "位置参考", 11, (0.93, 0.48, 0.16, 1), 28, True, "right",
+                "区域展示", 11, (0.93, 0.48, 0.16, 1), 28, True, "right",
                 size_hint=(None, None), width=dp(76)))
             card.add_widget(heading)
             card.add_widget(_text(
                 f"WGS84：{point['latitude']:.6f}, {point['longitude']:.6f}",
                 12, MUTED, 28))
-            card.add_widget(_text(
-                "用于定位行政区，不代表病虫害发生。", 11, MUTED, 24))
             self.body.add_widget(card)
 
         self.body.add_widget(_text("用户观察点", 17, INK, 38, True))

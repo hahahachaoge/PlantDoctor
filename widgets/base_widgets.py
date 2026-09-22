@@ -223,8 +223,8 @@ class PestListRow(ButtonBehavior, BoxLayout):
                 ph_rect = RoundedRectangle(
                     pos=ph.pos, size=ph.size, radius=[dp(10)] * 4)
             ph.bind(
-                pos=lambda i, r=ph_rect, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=ph_rect, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=ph_rect: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=ph_rect: setattr(r, "size", i.size),
             )
             first = Label(
                 text=pest_data["name"][0],
@@ -290,7 +290,6 @@ class PestListRow(ButtonBehavior, BoxLayout):
     def on_release(self):
         if self.on_open:
             self.on_open(self.pest_data["id"])
-
 
 
 

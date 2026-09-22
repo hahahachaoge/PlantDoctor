@@ -34,7 +34,7 @@ from screens.store import StoreScreen, StoreCategoryScreen, PesticideDetailScree
 from screens.mypage import MyPageScreen
 from screens.account_pages import (
     CustomerServiceScreen, FavoriteScreen, FeedbackScreen,
-    NotificationScreen, OrderScreen, ProfileScreen,
+    NotificationScreen, OrderScreen, ProfileScreen, SettingsScreen,
 )
 from screens.encyclopedia import EncyclopediaScreen, PestDetailScreen
 from screens.misc import MapDataScreen, MapScreen
@@ -102,6 +102,7 @@ class MyApp(App):
             sm.add_widget(EncyclopediaScreen())
             sm.add_widget(PestDetailScreen())
             sm.add_widget(MyPageScreen())
+            sm.add_widget(SettingsScreen())
             sm.add_widget(NotificationScreen())
             sm.add_widget(ProfileScreen())
             sm.add_widget(FeedbackScreen())

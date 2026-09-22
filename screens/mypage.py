@@ -1,4 +1,5 @@
 import os
+from math import cos, pi, sin
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -25,6 +26,42 @@ from widgets.base_widgets import (IconButton, UnderlineLabel, RoundedButton,
 from screens.home import HomeScreen, _update_camera_btn
 
 
+class GearIconButton(ButtonBehavior, Widget):
+    """Small vector settings button that does not depend on a font glyph."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(pos=self._redraw, size=self._redraw)
+        Clock.schedule_once(self._redraw, 0)
+
+    def _redraw(self, *_args):
+        self.canvas.clear()
+        if self.width <= 0 or self.height <= 0:
+            return
+        cx, cy = self.center
+        scale = min(self.width, self.height) / dp(40)
+        inner = dp(4.2) * scale
+        ring = dp(9.2) * scale
+        tooth_start = dp(10.4) * scale
+        tooth_end = dp(13.2) * scale
+        with self.canvas:
+            Color(1, 1, 1, 1)
+            Line(circle=(cx, cy, ring), width=max(dp(1.7) * scale, 1))
+            Line(circle=(cx, cy, inner), width=max(dp(1.7) * scale, 1))
+            for index in range(8):
+                angle = index * pi / 4
+                Line(
+                    points=(
+                        cx + cos(angle) * tooth_start,
+                        cy + sin(angle) * tooth_start,
+                        cx + cos(angle) * tooth_end,
+                        cy + sin(angle) * tooth_end,
+                    ),
+                    width=max(dp(2.5) * scale, 1),
+                    cap="square",
+                )
+
+
 class MyPageScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -43,13 +80,10 @@ class MyPageScreen(Screen):
             self.bg_rect = Rectangle(pos=self.layout.pos, size=self.layout.size)
         self.layout.bind(pos=self._update_bg, size=self._update_bg)
 
-        # 顶部绿色区域（顶部栏 + 用户卡片背景）
-        # 注意：这个高度和 user_card 的 pos_hint['y'] 是配套算出来的，
-        # 改一个就要重算另一个。当前 278dp 下：
-        #   nav_bar 占顶部 56dp → 卡片顶距 nav_bar 底 22dp（原来 52dp，太空）
-        #   卡片底距绿区底 14dp
+        # 顶部绿色区域（顶部栏 + 用户卡片背景）。按手机逻辑尺寸压缩，
+        # 让资料卡和导航栏之间保留 12dp 呼吸空间，避免头像与统计信息割裂。
         self.top_green = FloatLayout(
-            size_hint=(1, None), height=dp(278),
+            size_hint=(1, None), height=dp(234),
             pos_hint={"x": 0, "top": 1},
         )
         with self.top_green.canvas.before:
@@ -88,28 +122,24 @@ class MyPageScreen(Screen):
         nav_title.bind(size=nav_title.setter("text_size"))
         nav_bar.add_widget(nav_title)
 
-        settings_btn = Button(
-            text="@", font_size=sp(22),
-            color=(1, 1, 1, 1),
-            background_normal="", background_down="",
-            background_color=(0, 0, 0, 0),
+        settings_btn = GearIconButton(
             size_hint=(None, 1), width=dp(40),
         )
-        settings_btn.bind(on_press=lambda *_: show_toast("设置功能即将推出"))
+        settings_btn.bind(on_release=self.open_settings)
         nav_bar.add_widget(settings_btn)
         self.top_green.add_widget(nav_bar)
 
-        # 用户信息卡片（浅绿色圆角卡片）
-        # 高度 186dp 是按内部内容「精确」配出来的，别再随手改：
-        #   padding 上下 12 + 头像行 76 + 间距 11 + 分隔线 1 + 间距 11 + 统计行 62 = 185dp
-        # 之前内部实际需要 169dp 却只有 158dp 可用，BoxLayout 会把子项挤压、
-        # 头像被顶出 padding 外、间距忽大忽小 —— 这就是「看起来凌乱」的真正原因，
-        # 不是文字没对齐。要调高度请连内部配比一起调。
+        # 资料卡总高严格等于内部固定内容之和：
+        # 20 padding + 68 profile + 12 spacing + 1 divider + 52 stats = 153dp。
+        # 多留 1dp 抵消不同 Android 密度下的像素取整。
         self.user_card = BoxLayout(
-            orientation="vertical", spacing=dp(11),
-            size_hint=(0.90, None), height=dp(186),
-            pos_hint={"center_x": 0.5, "y": 0.05},
-            padding=(dp(14), dp(12), dp(14), dp(12)),
+            orientation="vertical", spacing=dp(6),
+            size_hint=(0.90, None), height=dp(154),
+            # Keep the visible gap below the title glyphs equal to the gap
+            # below the card.  20dp is balanced with the 56dp title row once
+            # the font's own ascent/descent whitespace is accounted for.
+            pos_hint={"center_x": 0.5, "y": 20.0 / 234.0},
+            padding=(dp(14), dp(10), dp(14), dp(10)),
         )
         with self.user_card.canvas.before:
             Color(0.82, 0.96, 0.82, 1)
@@ -130,20 +160,20 @@ class MyPageScreen(Screen):
         # 所以头像容器宽 = 1/3、名字块宽 = 2/3，spacing 必须为 0
         # （留 spacing 会把第 2 列起点推偏，网格就对不上了）。
         profile_row = BoxLayout(
-            size_hint=(1, None), height=dp(76),
+            size_hint=(1, None), height=dp(68),
             spacing=dp(0),
         )
         avatar_container = FloatLayout(size_hint=(1 / 3.0, 1))
         default_avatar = os.path.join(IMAGE_DIR, "nongming.png")
         self.avatar_image = CircleImage(
             source=default_avatar if os.path.exists(default_avatar) else "",
-            size_hint=(None, None), size=(dp(76), dp(76)),
+            size_hint=(None, None), size=(dp(64), dp(64)),
             allow_stretch=True, keep_ratio=False,
         )
         self.avatar_image.pos_hint = {"center_x": 0.5, "center_y": 0.5}
         self.avatar_placeholder = GrayPlaceholder(
             radius=1,
-            size_hint=(None, None), size=(dp(76), dp(76)),
+            size_hint=(None, None), size=(dp(64), dp(64)),
         )
         self.avatar_placeholder.pos_hint = {"center_x": 0.5, "center_y": 0.5}
         if os.path.exists(default_avatar):
@@ -155,7 +185,7 @@ class MyPageScreen(Screen):
         # 点击热区跟着头像走（容器现在宽 98.67dp，用 size_hint=(1,1) 会把
         # 头像两侧的空白也变成可点区域）
         avatar_btn = Button(
-            size_hint=(None, None), size=(dp(76), dp(76)),
+            size_hint=(None, None), size=(dp(64), dp(64)),
             pos_hint={"center_x": 0.5, "center_y": 0.5},
             background_normal="", background_down="",
             background_color=(0, 0, 0, 0),
@@ -171,15 +201,15 @@ class MyPageScreen(Screen):
         name_box = BoxLayout(orientation="vertical", spacing=dp(0),
                              size_hint=(2 / 3.0, 1))
         name_box.add_widget(Widget())                     # 上弹性
-        # 文字块固定高 60dp = 昵称 32 + 间距 4 + 签名 24，
+        # 文字块固定高 52dp = 昵称 29 + 间距 2 + 签名 21，
         # 上下弹性一夹，整块就正好落在头像行的垂直中线上。
-        name_col = BoxLayout(orientation="vertical", spacing=dp(4),
-                             size_hint=(1, None), height=dp(60))
+        name_col = BoxLayout(orientation="vertical", spacing=dp(2),
+                             size_hint=(1, None), height=dp(52))
         self.nick_label = Label(
             text=self.nick_name,
             font_size=sp(20), bold=True,
             color=(0.12, 0.35, 0.12, 1),
-            size_hint=(1, None), height=dp(32),
+            size_hint=(1, None), height=dp(29),
             halign="left", valign="middle",
             shorten=True, shorten_from="right",
             **text_style(),
@@ -191,7 +221,7 @@ class MyPageScreen(Screen):
         self.signature_label = Label(
             text=self.signature,
             font_size=sp(14), color=(0.28, 0.48, 0.28, 1),
-            size_hint=(1, None), height=dp(24),
+            size_hint=(1, None), height=dp(21),
             halign="left", valign="middle",
             shorten=True, shorten_from="right",
             **text_style(),
@@ -209,14 +239,14 @@ class MyPageScreen(Screen):
             Color(0.68, 0.88, 0.68, 1)
             div_rect = Rectangle(pos=divider.pos, size=divider.size)
         divider.bind(
-            pos=lambda i, r=div_rect, *_: setattr(r, "pos", i.pos),
-            size=lambda i, r=div_rect, *_: setattr(r, "size", i.size),
+            pos=lambda i, _value, r=div_rect: setattr(r, "pos", i.pos),
+            size=lambda i, _value, r=div_rect: setattr(r, "size", i.size),
         )
         self.user_card.add_widget(divider)
 
-        # 关注/粉丝/分享 统计行（高度 62dp 与 user_card 的总高配套）
+        # 关注/粉丝/分享与上方资料只隔一条轻分隔线，不再留下大段空白。
         self.stats_row = BoxLayout(
-            size_hint=(1, None), height=dp(62),
+            size_hint=(1, None), height=dp(52),
             spacing=dp(0),
         )
         self.user_card.add_widget(self.stats_row)
@@ -274,9 +304,9 @@ class MyPageScreen(Screen):
         from kivy.uix.behaviors import ButtonBehavior
 
         card = BoxLayout(
-            orientation="vertical", spacing=dp(8),
-            padding=(dp(12), dp(12), dp(12), dp(12)),
-            size_hint=(1, None), height=dp(110),
+            spacing=0,
+            padding=(dp(8), dp(7)),
+            size_hint=(1, None), height=dp(94),
         )
         with card.canvas.before:
             Color(1, 1, 1, 1)
@@ -286,8 +316,6 @@ class MyPageScreen(Screen):
             pos=lambda i, *_: setattr(card_bg, "pos", i.pos),
             size=lambda i, *_: setattr(card_bg, "size", i.size),
         )
-
-        actions_row = BoxLayout(size_hint=(1, None), height=dp(86))
 
         items = [
             ("通知", "通知.png", self.open_notifications),
@@ -299,15 +327,10 @@ class MyPageScreen(Screen):
 
         for title, icon_file, callback in items:
 
-            class NavBtn(ButtonBehavior, BoxLayout):
+            class NavBtn(ButtonBehavior, FloatLayout):
                 pass
 
-            btn = NavBtn(
-                orientation="vertical",
-                spacing=dp(4),
-                padding=(dp(4), dp(6), dp(4), dp(4)),
-                size_hint=(1, 1),
-            )
+            btn = NavBtn(size_hint=(1, 1))
             btn.bind(on_press=callback)
 
             icon_path = os.path.join(IMAGE_DIR, icon_file)
@@ -316,14 +339,15 @@ class MyPageScreen(Screen):
                     source=icon_path,
                     size_hint=(None, None), size=(dp(34), dp(34)),
                     allow_stretch=True, keep_ratio=True,
-                    pos_hint={"center_x": 0.5},
+                    pos_hint={"center_x": 0.5, "center_y": 0.64},
                 )
                 btn.add_widget(img)
             else:
                 placeholder = Label(
                     text=title[0], font_size=sp(22), bold=True,
                     color=GREEN,
-                    size_hint=(1, None), height=dp(52),
+                    size_hint=(1, None), height=dp(34),
+                    pos_hint={"center_x": 0.5, "center_y": 0.64},
                     halign="center", valign="middle",
                     **text_style(),
                 )
@@ -333,16 +357,16 @@ class MyPageScreen(Screen):
             lbl = Label(
                 text=title, font_size=sp(12),
                 color=(0.22, 0.22, 0.22, 1),
-                size_hint=(1, None), height=dp(18),
+                size_hint=(1, None), height=dp(20),
+                pos_hint={"center_x": 0.5, "center_y": 0.20},
                 halign="center", valign="middle",
                 **text_style(),
             )
             lbl.bind(size=lbl.setter("text_size"))
             btn.add_widget(lbl)
 
-            actions_row.add_widget(btn)
+            card.add_widget(btn)
 
-        card.add_widget(actions_row)
         return card
 
     def _show_notification_popup(self):
@@ -380,8 +404,8 @@ class MyPageScreen(Screen):
                 row_bg = RoundedRectangle(
                     pos=row.pos, size=row.size, radius=[dp(8)] * 4)
             row.bind(
-                pos=lambda i, r=row_bg, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=row_bg, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=row_bg: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=row_bg: setattr(r, "size", i.size),
             )
             lbl = Label(
                 text=notif, font_size=sp(13),
@@ -492,8 +516,8 @@ class MyPageScreen(Screen):
                 row_bg = RoundedRectangle(
                     pos=row.pos, size=row.size, radius=[dp(8)] * 4)
             row.bind(
-                pos=lambda i, r=row_bg, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=row_bg, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=row_bg: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=row_bg: setattr(r, "size", i.size),
             )
             avatar_circle = Widget(size_hint=(None, None), size=(dp(36), dp(36)))
             with avatar_circle.canvas:
@@ -566,8 +590,8 @@ class MyPageScreen(Screen):
                 pos=icon_circle.pos, size=icon_circle.size,
                 radius=[dp(10)] * 4)
         icon_circle.bind(
-            pos=lambda i, r=ic_bg, *_: setattr(r, "pos", i.pos),
-            size=lambda i, r=ic_bg, *_: setattr(r, "size", i.size),
+            pos=lambda i, _value, r=ic_bg: setattr(r, "pos", i.pos),
+            size=lambda i, _value, r=ic_bg: setattr(r, "size", i.size),
         )
         icon_circle.pos_hint = {"center_x": 0.5, "center_y": 0.5}
         icon_wrap.add_widget(icon_circle)
@@ -665,12 +689,12 @@ class MyPageScreen(Screen):
             (followers, "我的粉丝"),
             (share, "我的分享"),
         ]:
-            stat_box = BoxLayout(orientation="vertical", spacing=dp(2),
+            stat_box = BoxLayout(orientation="vertical", spacing=0,
                                  size_hint=(1, 1))
             num_label = Label(
                 text=str(num), font_size=sp(22), bold=True,
                 color=(0.12, 0.35, 0.12, 1),
-                size_hint=(1, None), height=dp(32),
+                size_hint=(1, None), height=dp(28),
                 halign="center", valign="middle", **text_style(),
             )
             num_label.bind(size=num_label.setter("text_size"))
@@ -697,7 +721,7 @@ class MyPageScreen(Screen):
         else:
             self.avatar_container.add_widget(self.avatar_placeholder)
         avatar_btn = Button(
-            size_hint=(None, None), size=(dp(76), dp(76)),
+            size_hint=(None, None), size=(dp(64), dp(64)),
             pos_hint={"center_x": 0.5, "center_y": 0.5},
             background_normal="", background_down="",
             background_color=(0, 0, 0, 0),
@@ -789,13 +813,19 @@ class MyPageScreen(Screen):
         self.manager.current = "order"
 
     def open_notifications(self, _instance=None):
-        self.manager.current = "notifications"
+        if self.manager and self.manager.has_screen("notifications"):
+            self.manager.get_screen("notifications").return_screen = "mypage"
+            self.manager.current = "notifications"
 
     def open_feedback(self, _instance=None):
         self.manager.current = "feedback"
 
     def open_customer_service(self, _instance=None):
         self.manager.current = "customer_service"
+
+    def open_settings(self, _instance=None):
+        if self.manager and self.manager.has_screen("settings"):
+            self.manager.current = "settings"
 
     def logout(self, _instance=None):
         app = App.get_running_app()
@@ -842,8 +872,8 @@ class MyPageScreen(Screen):
                 row_bg = RoundedRectangle(
                     pos=row.pos, size=row.size, radius=[dp(10)] * 4)
             row.bind(
-                pos=lambda i, r=row_bg, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=row_bg, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=row_bg: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=row_bg: setattr(r, "size", i.size),
             )
             tag_lbl = Label(
                 text=tag, font_size=sp(12), bold=True,
@@ -856,8 +886,8 @@ class MyPageScreen(Screen):
                 tag_bg = RoundedRectangle(
                     pos=tag_lbl.pos, size=tag_lbl.size, radius=[dp(6)] * 4)
             tag_lbl.bind(
-                pos=lambda i, r=tag_bg, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=tag_bg, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=tag_bg: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=tag_bg: setattr(r, "size", i.size),
             )
             row.add_widget(tag_lbl)
             content_lbl = Label(
@@ -991,8 +1021,8 @@ class MyPageScreen(Screen):
                 row_bg = RoundedRectangle(
                     pos=row.pos, size=row.size, radius=[dp(10)] * 4)
             row.bind(
-                pos=lambda i, r=row_bg, *_: setattr(r, "pos", i.pos),
-                size=lambda i, r=row_bg, *_: setattr(r, "size", i.size),
+                pos=lambda i, _value, r=row_bg: setattr(r, "pos", i.pos),
+                size=lambda i, _value, r=row_bg: setattr(r, "size", i.size),
             )
 
             # 头像圆圈
@@ -1006,8 +1036,8 @@ class MyPageScreen(Screen):
                 from kivy.graphics import Ellipse as GEllipse
                 av_ellipse = GEllipse(pos=av_circle.pos, size=av_circle.size)
             av_circle.bind(
-                pos=lambda i, e=av_ellipse, *_: setattr(e, "pos", i.pos),
-                size=lambda i, e=av_ellipse, *_: setattr(e, "size", i.size),
+                pos=lambda i, _value, e=av_ellipse: setattr(e, "pos", i.pos),
+                size=lambda i, _value, e=av_ellipse: setattr(e, "size", i.size),
             )
             av_lbl = Label(
                 text=name[0], font_size=sp(16), bold=True,
@@ -1171,8 +1201,8 @@ class MyPageScreen(Screen):
                 row_bg = RoundedRectangle(pos=row.pos, size=row.size,
                                           radius=[dp(12)] * 4)
             row.bind(
-                pos=lambda item, shape=row_bg, *_: setattr(shape, "pos", item.pos),
-                size=lambda item, shape=row_bg, *_: setattr(shape, "size", item.size))
+                pos=lambda item, _value, shape=row_bg: setattr(shape, "pos", item.pos),
+                size=lambda item, _value, shape=row_bg: setattr(shape, "size", item.size))
             avatar = CircleImage(
                 source=os.path.join(IMAGE_DIR, avatar_name),
                 size_hint=(None, None), size=(dp(50), dp(50)))
@@ -1407,8 +1437,8 @@ class OrderRow(ButtonBehavior, BoxLayout):
                 pos=placeholder.pos, size=placeholder.size,
                 radius=[dp(8)] * 4)
         placeholder.bind(
-            pos=lambda i, r=ph_rect, *_: setattr(r, "pos", i.pos),
-            size=lambda i, r=ph_rect, *_: setattr(r, "size", i.size),
+            pos=lambda i, _value, r=ph_rect: setattr(r, "pos", i.pos),
+            size=lambda i, _value, r=ph_rect: setattr(r, "size", i.size),
         )
         thumb_wrap.add_widget(placeholder)
         self.add_widget(thumb_wrap)

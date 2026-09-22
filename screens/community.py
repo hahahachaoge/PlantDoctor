@@ -343,7 +343,7 @@ class CommunityScreen(Screen):
         else:
             bell_btn = Widget(size_hint=(None, 1), width=dp(26))
         if isinstance(bell_btn, _TapImage):
-            bell_btn.bind(on_press=lambda *_: show_toast("暂无新消息"))
+            bell_btn.bind(on_press=self.open_notifications)
         bar.add_widget(bell_btn)
 
         # 右侧头像：进入社区时按当前登录用户刷新
@@ -353,6 +353,18 @@ class CommunityScreen(Screen):
         bar.add_widget(self.community_avatar_wrap)
         self._refresh_user_avatar()
         return bar
+
+    def open_notifications(self, *_args):
+        """打开与「我的」页共用的通知中心。
+
+        记住社区入口，这样通知页的返回键会回到社区，而不是
+        固定跳到「我的」页。
+        """
+        if not self.manager or not self.manager.has_screen("notifications"):
+            return
+        page = self.manager.get_screen("notifications")
+        page.return_screen = "community"
+        self.manager.current = "notifications"
 
     def on_pre_enter(self, *args):
         self._refresh_user_avatar()
@@ -538,129 +550,92 @@ class CommunityScreen(Screen):
         full_link_row.add_widget(full_link)
         card.add_widget(full_link_row)
 
-        # 底部：点赞 / 评论 / 分享（固定尺寸 + pos_hint 居中，保证水平对齐）
-        footer = BoxLayout(
-            size_hint=(1, None), height=dp(28),
-            spacing=dp(4),
-        )
+        card.add_widget(self._build_post_footer(post))
+        return card
 
+    @staticmethod
+    def _action_icon(source, size=24, fallback_draw=None):
+        """创建固定画布的 contain 图标，避免 Android 端被拉伸或裁切。"""
+        if source and os.path.exists(source):
+            return KImage(
+                source=source,
+                size_hint=(None, None), size=(dp(size), dp(size)),
+                allow_stretch=True, keep_ratio=True, fit_mode="contain",
+                pos_hint={"center_y": 0.5},
+            )
+        icon = Widget(
+            size_hint=(None, None), size=(dp(size), dp(size)),
+            pos_hint={"center_y": 0.5},
+        )
+        if fallback_draw:
+            icon.bind(pos=fallback_draw, size=fallback_draw)
+        return icon
+
+    def _build_post_footer(self, post):
+        """社区卡片统一互动栏，所有图标均来自 image 中的用户资源。"""
+        footer = BoxLayout(
+            size_hint=(1, None), height=dp(34), spacing=dp(18),
+            padding=(dp(2), dp(3), dp(2), dp(3)),
+        )
         liked = self._is_post_liked(post["id"])
         count_val = STORE_DB.get_post_like_count(post["id"])
-        like_key = self._post_key(post)
-        comment_count = len(STORE_DB.get_post_comments(like_key))
+        post_key = self._post_key(post)
+        comment_count = len(STORE_DB.get_post_comments(post_key))
 
-        like_off = LIKE_ICON_OFF
-        like_on = LIKE_ICON_ON
-
-        # —— 点赞 ——
-        heart_img = KImage(
-            source=like_on if liked else like_off,
-            size_hint=(None, None), size=(dp(22), dp(22)),
-            allow_stretch=True, keep_ratio=True,
-            pos_hint={"center_y": 0.5, "x": 0},
-        )
+        like_wrap = _BarButton(
+            size_hint=(None, 1), width=dp(66), spacing=dp(7))
+        heart_img = self._action_icon(
+            LIKE_ICON_ON if liked else LIKE_ICON_OFF, 24)
         like_count_lbl = Label(
-            text=f"{count_val}",
-            font_size=sp(13), color=(0.18, 0.18, 0.18, 1),
-            size_hint=(None, None), size=(dp(42), dp(22)),
-            pos_hint={"center_y": 0.5, "right": 1},
-            halign="left", valign="middle", **text_style(),
-        )
+            text=str(count_val), font_size=sp(13),
+            color=(0.18, 0.18, 0.18, 1),
+            size_hint=(None, 1), width=dp(30),
+            halign="left", valign="middle", **text_style())
         like_count_lbl.bind(size=like_count_lbl.setter("text_size"))
-
-        def make_like_handler(p, img, count_lbl, off_src, on_src):
-            def handler(*_):
-                app = App.get_running_app()
-                username = app.current_user["username"] if app.current_user else ""
-                if not username:
-                    show_toast("请先登录")
-                    return
-                liked_now = STORE_DB.toggle_post_like(username, p["id"])
-                img.source = on_src if liked_now else off_src
-                img.reload()
-                count = STORE_DB.get_post_like_count(p["id"])
-                count_lbl.text = str(count)
-
-            return handler
-
-        like_wrap = FloatLayout(size_hint=(None, 1), width=dp(70))
         like_wrap.add_widget(heart_img)
         like_wrap.add_widget(like_count_lbl)
-        like_btn = Button(
-            background_normal="", background_down="",
-            background_color=(0, 0, 0, 0),
-            size_hint=(1, 1),
-        )
-        like_btn.bind(on_press=make_like_handler(
-            post, heart_img, like_count_lbl, like_off, like_on))
-        like_wrap.add_widget(like_btn)
+
+        def toggle_post_like(*_args):
+            app = App.get_running_app()
+            username = (app.current_user.get("username", "")
+                        if app and app.current_user else "")
+            if not username:
+                show_toast("请先登录")
+                return
+            liked_now = STORE_DB.toggle_post_like(username, post["id"])
+            heart_img.source = LIKE_ICON_ON if liked_now else LIKE_ICON_OFF
+            heart_img.reload()
+            like_count_lbl.text = str(
+                STORE_DB.get_post_like_count(post["id"]))
+
+        like_wrap.bind(on_press=toggle_post_like)
         footer.add_widget(like_wrap)
 
-        # —— 评论数 ——
-        if os.path.exists(COMMENT_ICON):
-            comment_icon = KImage(
-                source=COMMENT_ICON,
-                size_hint=(None, None), size=(dp(20), dp(20)),
-                allow_stretch=True, keep_ratio=True,
-                pos_hint={"center_y": 0.5, "x": 0},
-            )
-        else:
-            comment_icon = Widget(
-                size_hint=(None, None), size=(dp(20), dp(20)),
-                pos_hint={"center_y": 0.5, "x": 0},
-            )
-            comment_icon.bind(pos=_draw_comment_icon,
-                              size=_draw_comment_icon)
-        comment_lbl = Label(
-            text=f"{comment_count}",
-            font_size=sp(13), color=(0.18, 0.18, 0.18, 1),
-            size_hint=(None, None), size=(dp(34), dp(22)),
-            pos_hint={"center_y": 0.5, "right": 1},
-            halign="left", valign="middle", **text_style(),
-        )
-        comment_lbl.bind(size=comment_lbl.setter("text_size"))
-        comment_wrap = FloatLayout(size_hint=(None, 1), width=dp(58))
-        comment_wrap.add_widget(comment_icon)
-        comment_wrap.add_widget(comment_lbl)
-        comment_btn = Button(
-            background_normal="", background_down="",
-            background_color=(0, 0, 0, 0),
-            size_hint=(1, 1),
-        )
-        comment_btn.bind(
+        comment_wrap = _BarButton(
+            size_hint=(None, 1), width=dp(62), spacing=dp(7))
+        comment_wrap.add_widget(
+            self._action_icon(COMMENT_ICON, 24, _draw_comment_icon))
+        comment_label = Label(
+            text=str(comment_count), font_size=sp(13),
+            color=(0.18, 0.18, 0.18, 1),
+            size_hint=(None, 1), width=dp(28),
+            halign="left", valign="middle", **text_style())
+        comment_label.bind(size=comment_label.setter("text_size"))
+        comment_wrap.add_widget(comment_label)
+        comment_wrap.bind(
             on_press=lambda *_: self.open_community_detail(post))
-        comment_wrap.add_widget(comment_btn)
         footer.add_widget(comment_wrap)
 
         footer.add_widget(Widget(size_hint=(1, 1)))
-
-        # —— 分享 ——
-        if os.path.exists(SHARE_ICON):
-            share_icon = KImage(
-                source=SHARE_ICON,
-                size_hint=(None, None), size=(dp(22), dp(22)),
-                allow_stretch=True, keep_ratio=True,
-                pos_hint={"center_x": 0.5, "center_y": 0.5},
-            )
-        else:
-            share_icon = Widget(
-                size_hint=(None, None), size=(dp(22), dp(22)),
-                pos_hint={"center_x": 0.5, "center_y": 0.5},
-            )
-            share_icon.bind(pos=_draw_share_icon, size=_draw_share_icon)
-        share_wrap = FloatLayout(size_hint=(None, 1), width=dp(36))
-        share_wrap.add_widget(share_icon)
-        share_btn = Button(
-            size_hint=(1, 1),
-            background_normal="", background_down="",
-            background_color=(0, 0, 0, 0),
-        )
-        share_btn.bind(on_press=lambda *_: show_toast("分享功能即将推出"))
-        share_wrap.add_widget(share_btn)
+        share_wrap = _BarButton(
+            size_hint=(None, 1), width=dp(34),
+            padding=(dp(4), 0, dp(4), 0))
+        share_wrap.add_widget(
+            self._action_icon(SHARE_ICON, 24, _draw_share_icon))
+        share_wrap.bind(
+            on_press=lambda *_: show_toast("分享功能即将推出"))
         footer.add_widget(share_wrap)
-
-        card.add_widget(footer)
-        return card
+        return footer
 
     def _build_kandian(self):
         """看点：两张固定统一尺寸的圆角图片 + 标题。"""
@@ -770,6 +745,7 @@ class CommunityScreen(Screen):
         link.bind(on_press=lambda *_: self.open_community_detail(post))
         link_row.add_widget(link)
         card.add_widget(link_row)
+        card.add_widget(self._build_post_footer(post))
         return card
 
     def cancel_search(self, _instance=None):
@@ -932,25 +908,52 @@ class CommunityDetailScreen(Screen):
                                        height=dp(170))
         self.content_box.add_widget(self.post_image)
 
-        # 互动统计行：点赞 + 点赞数 + 浏览量（位于历史评论上方）
+        # 互动统计行：与社区卡片共用点赞 / 评论 / 转发图标。
         stats_row = BoxLayout(
-            size_hint=(1, None), height=dp(32), spacing=dp(6),
+            size_hint=(1, None), height=dp(36), spacing=dp(12),
+            padding=(dp(2), dp(4), dp(2), dp(4)),
         )
         self.like_btn = LikeImageButton(
             source_off=LIKE_ICON_OFF, source_on=LIKE_ICON_ON,
-            size_hint=(None, 1), width=dp(24),
+            size_hint=(None, None), size=(dp(24), dp(24)),
+            pos_hint={"center_y": 0.5}, fit_mode="contain",
         )
         self.like_btn.bind(on_press=self.toggle_like)
         stats_row.add_widget(self.like_btn)
 
         self.like_count_label = Label(
-            text="0", size_hint=(None, 1), width=dp(32),
+            text="0", size_hint=(None, 1), width=dp(24),
             color=(0.2, 0.2, 0.2, 1),
             halign="left", valign="middle", **text_style(),
         )
         self.like_count_label.bind(
             size=self.like_count_label.setter("text_size"))
         stats_row.add_widget(self.like_count_label)
+
+        comment_action = _BarButton(
+            size_hint=(None, 1), width=dp(58), spacing=dp(7))
+        comment_action.add_widget(
+            CommunityScreen._action_icon(
+                COMMENT_ICON, 24, _draw_comment_icon))
+        self.detail_comment_count = Label(
+            text="0", size_hint=(None, 1), width=dp(26),
+            font_size=sp(13), color=(0.2, 0.2, 0.2, 1),
+            halign="left", valign="middle", **text_style())
+        self.detail_comment_count.bind(
+            size=self.detail_comment_count.setter("text_size"))
+        comment_action.add_widget(self.detail_comment_count)
+        comment_action.bind(on_press=self._focus_comment_input)
+        stats_row.add_widget(comment_action)
+
+        share_action = _BarButton(
+            size_hint=(None, 1), width=dp(32),
+            padding=(dp(4), 0, dp(4), 0))
+        share_action.add_widget(
+            CommunityScreen._action_icon(
+                SHARE_ICON, 24, _draw_share_icon))
+        share_action.bind(
+            on_press=lambda *_: show_toast("分享功能即将推出"))
+        stats_row.add_widget(share_action)
 
         stats_row.add_widget(Widget(size_hint=(1, 1)))
 
@@ -980,8 +983,8 @@ class CommunityDetailScreen(Screen):
 
         # 底部操作栏：白底 + 输入框占满剩余宽度 + 绿色圆角发表按钮
         self.action_bar = BoxLayout(
-            orientation="horizontal", size_hint=(1, None), height=dp(56),
-            spacing=dp(10), padding=(dp(12), dp(10), dp(12), dp(10)),
+            orientation="horizontal", size_hint=(1, None), height=dp(68),
+            spacing=dp(10), padding=(dp(12), dp(8), dp(12), dp(8)),
             pos_hint={"x": 0, "y": 0},
         )
         with self.action_bar.canvas.before:
@@ -996,7 +999,9 @@ class CommunityDetailScreen(Screen):
 
         self.comment_input = TextInput(
             hint_text="写下你的评论", multiline=False, size_hint=(1, 1),
-            padding=(dp(12), dp(12), dp(12), dp(12)), font_size=sp(14),
+            # Android 中文字体的上下留白比桌面端大，原先 36dp
+            # 的实际内高会裁掉字形。改为 52dp 内高并分开四边 padding。
+            padding=(dp(14), dp(13), dp(14), dp(9)), font_size=sp(14),
             input_type="text", keyboard_suggestions=True,
             write_tab=False,
             background_normal="", background_active="",
@@ -1042,6 +1047,10 @@ class CommunityDetailScreen(Screen):
     def _sync_dynamic_label(self, instance, _value):
         instance.height = max(dp(28), instance.texture_size[1] + dp(6))
 
+    def _focus_comment_input(self, *_args):
+        """点按评论图标后聚焦手机输入框，不使用额外弹窗。"""
+        self.comment_input.focus = True
+
     def _build_comment_widget(self, comment):
         wrapper = BoxLayout(
             orientation="vertical", spacing=dp(4),
@@ -1050,13 +1059,33 @@ class CommunityDetailScreen(Screen):
         )
         wrapper.bind(minimum_height=wrapper.setter("height"))
         with wrapper.canvas.before:
-            Color(0.93, 0.97, 0.93, 1)
+            Color(1, 1, 1, 1)
             bg_rect = RoundedRectangle(
                 pos=wrapper.pos, size=wrapper.size, radius=[dp(12)] * 4)
-        wrapper.bind(
-            pos=lambda i, r=bg_rect, *_: setattr(r, "pos", i.pos),
-            size=lambda i, r=bg_rect, *_: setattr(r, "size", i.size),
-        )
+        with wrapper.canvas.after:
+            Color(0.80, 0.90, 0.82, 1)
+            border = Line(
+                rounded_rectangle=(
+                    wrapper.x, wrapper.y, wrapper.width, wrapper.height,
+                    dp(12)),
+                width=dp(1),
+            )
+
+        def sync_comment_card(instance, *_args):
+            """Keep both instructions attached to this card.
+
+            The old lambda accepted Kivy's second callback value in the
+            default ``r`` slot, so the rectangle stayed at its default
+            100x100 position at the lower-left corner of the screen.
+            """
+            bg_rect.pos = instance.pos
+            bg_rect.size = instance.size
+            border.rounded_rectangle = (
+                instance.x, instance.y, instance.width, instance.height,
+                dp(12))
+
+        wrapper.bind(pos=sync_comment_card, size=sync_comment_card)
+        Clock.schedule_once(lambda _dt: sync_comment_card(wrapper), 0)
         header = Label(
             text=f"{comment['username']}  {comment['comment_date']}",
             font_size=sp(12), color=GREEN,
@@ -1124,6 +1153,7 @@ class CommunityDetailScreen(Screen):
         if not self.item_data:
             return
         comments = STORE_DB.get_post_comments(self.item_data["key"])
+        self.detail_comment_count.text = str(len(comments))
         if not comments:
             empty_label = Label(
                 text="暂无评论，快来抢沙发",
